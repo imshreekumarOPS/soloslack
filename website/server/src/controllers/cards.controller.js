@@ -128,25 +128,46 @@ exports.moveCard = async (req, res, next) => {
             throw error;
         }
 
-        const oldColumnId = card.columnId;
+        const oldColumnId = card.columnId.toString();
+        const targetColumnId = newColumnId.toString();
 
-        // Update the card
-        card.columnId = newColumnId;
+        // 1. Update the card itself
+        card.columnId = targetColumnId;
         card.order = newOrder;
         await card.save();
 
-        // Re-index source column
-        const sourceCards = await Card.find({ columnId: oldColumnId, _id: { $ne: card._id }, isArchived: false }).sort({ order: 1 });
-        const sourceOps = sourceCards.map((c, i) => ({
+        // 2. Re-index the destination column
+        const destCards = await Card.find({ columnId: targetColumnId, isArchived: false, _id: { $ne: card._id } })
+            .sort({ order: 1, updatedAt: -1 });
+
+        // Insert moving card at newOrder position
+        const newColumnCards = [...destCards];
+        newColumnCards.splice(newOrder, 0, card);
+
+        const destOps = newColumnCards.map((c, i) => ({
             updateOne: {
                 filter: { _id: c._id },
-                update: { $set: { order: i < newOrder && oldColumnId.toString() === newColumnId.toString() ? i : i >= newOrder && oldColumnId.toString() === newColumnId.toString() ? i + 1 : i } },
+                update: { $set: { order: i } },
             },
         }));
-        // Simplified re-indexing: just re-index everything in both columns
-        await reindexColumn(oldColumnId);
-        if (oldColumnId.toString() !== newColumnId.toString()) {
-            await reindexColumn(newColumnId);
+
+        if (destOps.length > 0) {
+            await Card.bulkWrite(destOps);
+        }
+
+        // 3. Re-index the source column if it's different
+        if (oldColumnId !== targetColumnId) {
+            const sourceCards = await Card.find({ columnId: oldColumnId, isArchived: false })
+                .sort({ order: 1 });
+            const sourceOps = sourceCards.map((c, i) => ({
+                updateOne: {
+                    filter: { _id: c._id },
+                    update: { $set: { order: i } },
+                },
+            }));
+            if (sourceOps.length > 0) {
+                await Card.bulkWrite(sourceOps);
+            }
         }
 
         res.status(200).json({
@@ -155,6 +176,7 @@ exports.moveCard = async (req, res, next) => {
             message: 'Card moved successfully',
         });
     } catch (error) {
+        console.error('Move Card Error:', error);
         next(error);
     }
 };

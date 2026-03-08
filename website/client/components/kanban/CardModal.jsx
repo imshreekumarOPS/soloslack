@@ -21,11 +21,22 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
     const debouncedTitle = useDebounce(title, 1000);
     const debouncedDesc = useDebounce(description, 1000);
 
+    // Only update if current state differs from the card's original data
+    // and we are NOT in the initial loading phase for this card
     useEffect(() => {
-        if (card && (debouncedTitle !== card.title || debouncedDesc !== card.description)) {
+        if (!card || !isOpen) return;
+
+        const hasTitleChanged = debouncedTitle !== (card.title || '');
+        const hasDescChanged = debouncedDesc !== (card.description || '');
+
+        if (hasTitleChanged || hasDescChanged) {
+            // Prevent sending empty title if it was originally not empty
+            if (hasTitleChanged && debouncedTitle.trim() === '' && (card.title || '').trim() !== '') {
+                return;
+            }
             onUpdate(card._id, { title: debouncedTitle, description: debouncedDesc });
         }
-    }, [debouncedTitle, debouncedDesc, card, onUpdate]);
+    }, [debouncedTitle, debouncedDesc, card?._id, isOpen, onUpdate]);
 
     const handlePriorityChange = (p) => {
         setPriority(p);

@@ -5,10 +5,12 @@ import { useNotes } from '@/context/NotesContext';
 import { useBoards } from '@/context/BoardsContext';
 import BoardCard from '@/components/kanban/BoardCard';
 import NoteItem from '@/components/notes/NoteItem';
+import CreateBoardModal from '@/components/kanban/CreateBoardModal';
 
 export default function Dashboard() {
     const { notes, fetchNotes, setActiveNote } = useNotes();
-    const { boards, fetchBoards } = useBoards();
+    const { boards, fetchBoards, createBoard } = useBoards();
+    const [isBoardModalOpen, setIsBoardModalOpen] = useState(false);
 
     useEffect(() => {
         fetchNotes({ limit: 5 });
@@ -79,10 +81,7 @@ export default function Dashboard() {
                             </div>
                         </Link>
                         <button
-                            onClick={() => {
-                                const name = prompt('Enter board name:');
-                                if (name) window.location.href = '/boards';
-                            }}
+                            onClick={() => setIsBoardModalOpen(true)}
                             className="w-full flex items-center gap-3 p-4 bg-surface-raised border border-border-subtle rounded-xl hover:bg-surface-hover transition-colors group text-left"
                         >
                             <span className="text-2xl">■</span>
@@ -94,6 +93,14 @@ export default function Dashboard() {
                     </div>
                 </section>
             </div>
+            <CreateBoardModal
+                isOpen={isBoardModalOpen}
+                onClose={() => setIsBoardModalOpen(false)}
+                onCreate={async (data) => {
+                    await createBoard(data);
+                    window.location.href = '/boards';
+                }}
+            />
         </div>
     );
 }

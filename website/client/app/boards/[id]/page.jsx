@@ -4,13 +4,18 @@ import { useParams } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
 import KanbanBoard from '@/components/kanban/KanbanBoard';
 import CardModal from '@/components/kanban/CardModal';
+import CreateColumnModal from '@/components/kanban/CreateColumnModal';
+import CreateCardModal from '@/components/kanban/CreateCardModal';
 import { cardsApi } from '@/lib/api/cardsApi';
 
 export default function BoardViewPage() {
     const { id } = useParams();
-    const { activeBoard, fetchBoardFull, moveCard, loading } = useBoards();
+    const { activeBoard, fetchBoardFull, moveCard, createColumn, loading } = useBoards();
     const [selectedCard, setSelectedCard] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+    const [activeColumnId, setActiveColumnId] = useState(null);
 
     useEffect(() => {
         if (id) {
@@ -22,16 +27,25 @@ export default function BoardViewPage() {
         await moveCard(cardId, destination);
     };
 
-    const handleAddCard = async (columnId) => {
-        const title = prompt('Enter card title:');
-        if (title) {
-            await cardsApi.create({
-                boardId: id,
-                columnId,
-                title,
-            });
-            fetchBoardFull(id);
-        }
+    const handleAddCard = (columnId) => {
+        setActiveColumnId(columnId);
+        setIsCardModalOpen(true);
+    };
+
+    const handleCreateCard = async (data) => {
+        await cardsApi.create({
+            boardId: id,
+            columnId: activeColumnId,
+            ...data,
+        });
+        fetchBoardFull(id);
+    };
+
+    const handleAddColumn = async (data) => {
+        await createColumn({
+            boardId: id,
+            ...data,
+        });
     };
 
     const handleCardClick = (card) => {
@@ -75,7 +89,10 @@ export default function BoardViewPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button className="text-xs font-semibold bg-accent hover:bg-accent-hover text-white px-3 py-1.5 rounded-md transition-colors">
+                    <button
+                        onClick={() => setIsColumnModalOpen(true)}
+                        className="text-xs font-semibold bg-accent hover:bg-accent-hover text-white px-3 py-1.5 rounded-md transition-colors"
+                    >
                         + Add Column
                     </button>
                 </div>
@@ -88,6 +105,7 @@ export default function BoardViewPage() {
                     cardsByColumn={cardsByColumn}
                     onMoveCard={handleMoveCard}
                     onAddCard={handleAddCard}
+                    onAddColumn={() => setIsColumnModalOpen(true)}
                     onCardClick={handleCardClick}
                 />
             </div>
@@ -98,6 +116,16 @@ export default function BoardViewPage() {
                 card={selectedCard}
                 onUpdate={handleUpdateCard}
                 onDelete={handleDeleteCard}
+            />
+            <CreateColumnModal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                onCreate={handleAddColumn}
+            />
+            <CreateCardModal
+                isOpen={isCardModalOpen}
+                onClose={() => setIsCardModalOpen(false)}
+                onCreate={handleCreateCard}
             />
         </div>
     );

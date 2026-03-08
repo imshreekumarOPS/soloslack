@@ -4,20 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
 import { cn } from '@/lib/utils/cn';
+import CreateBoardModal from '@/components/kanban/CreateBoardModal';
+import { useState } from 'react';
 
 export default function Sidebar() {
     const pathname = usePathname();
     const { boards, fetchBoards, createBoard } = useBoards();
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         fetchBoards();
     }, [fetchBoards]);
 
-    const handleNewBoard = async () => {
-        const name = prompt('Enter board name:');
-        if (name) {
-            await createBoard({ name });
-        }
+    const handleNewBoard = () => {
+        setIsModalOpen(true);
+    };
+
+    const handleCreateBoard = async (data) => {
+        await createBoard(data);
     };
 
     const navItems = [
@@ -82,6 +86,11 @@ export default function Sidebar() {
                     </div>
                 </div>
             </nav>
+            <CreateBoardModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onCreate={handleCreateBoard}
+            />
         </aside>
     );
 }

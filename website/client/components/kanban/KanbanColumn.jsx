@@ -1,7 +1,12 @@
+import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
 
 export default function KanbanColumn({ column, cards, onCardClick, onAddCard }) {
+    const { setNodeRef } = useDroppable({
+        id: column._id,
+    });
+
     return (
         <div className="w-72 flex flex-col shrink-0 bg-surface-raised/40 rounded-xl border border-border-subtle overflow-hidden max-h-full">
             <header className="p-3 flex items-center justify-between border-b border-border-subtle bg-surface-raised/60">
@@ -16,7 +21,10 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard }) 
                 <button className="text-text-muted hover:text-text-primary transition-colors">···</button>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">
+            <div
+                ref={setNodeRef}
+                className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[150px]"
+            >
                 <SortableContext items={cards.map(c => c._id)} strategy={verticalListSortingStrategy}>
                     {cards.map((card) => (
                         <KanbanCard

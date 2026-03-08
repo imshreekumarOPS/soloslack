@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import Badge from '../ui/Badge';
 import { cn } from '@/lib/utils/cn';
 
-export default function KanbanCard({ card, onClick }) {
+export default function KanbanCard({ card, onClick, isOverlay }) {
     const {
         attributes,
         listeners,
@@ -11,24 +11,25 @@ export default function KanbanCard({ card, onClick }) {
         transform,
         transition,
         isDragging
-    } = useSortable({ id: card._id });
+    } = useSortable({
+        id: card._id,
+        disabled: isOverlay
+    });
 
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
     };
 
-    return (
+    const cardContent = (
         <div
-            ref={setNodeRef}
-            style={style}
-            {...attributes}
-            {...listeners}
-            onClick={onClick}
             className={cn(
                 "bg-surface-overlay border border-border-subtle rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-border-strong hover:bg-surface-hover transition-all group",
-                isDragging && "opacity-50 ring-2 ring-accent"
+                isDragging && "opacity-50 ring-2 ring-accent",
+                isOverlay && "cursor-grabbing border-accent ring-2 ring-accent/50 shadow-2xl scale-105"
             )}
+            onClick={!isOverlay ? onClick : undefined}
+            {...(!isOverlay ? { ...attributes, ...listeners } : {})}
         >
             <div className="flex items-start justify-between mb-2">
                 <Badge priority={card.priority} />
@@ -49,6 +50,16 @@ export default function KanbanCard({ card, onClick }) {
                     <span>📄</span> Linked Note
                 </div>
             )}
+        </div>
+    );
+
+    if (isOverlay) {
+        return cardContent;
+    }
+
+    return (
+        <div ref={setNodeRef} style={style}>
+            {cardContent}
         </div>
     );
 }

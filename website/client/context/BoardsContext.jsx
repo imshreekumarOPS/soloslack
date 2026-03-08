@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 import { boardsApi } from '@/lib/api/boardsApi';
 import { cardsApi } from '@/lib/api/cardsApi';
+import { columnsApi } from '@/lib/api/columnsApi';
 
 const BoardsContext = createContext(null);
 
@@ -41,6 +42,18 @@ export function BoardsProvider({ children }) {
         return res.data;
     };
 
+    const createColumn = async (data) => {
+        const res = await columnsApi.create(data);
+        // If we have an active board, add the new column to it
+        if (activeBoard?.board?._id === data.boardId) {
+            setActiveBoard(prev => ({
+                ...prev,
+                columns: [...prev.columns, { ...res.data, cards: [] }]
+            }));
+        }
+        return res.data;
+    };
+
     const updateBoard = async (id, data) => {
         const res = await boardsApi.update(id, data);
         setBoards(prev => prev.map(b => b._id === id ? res.data : b));
@@ -68,7 +81,7 @@ export function BoardsProvider({ children }) {
     return (
         <BoardsContext.Provider value={{
             boards, activeBoard, loading,
-            setActiveBoard, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard
+            setActiveBoard, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard, createColumn
         }}>
             {children}
         </BoardsContext.Provider>
@@ -77,5 +90,5 @@ export function BoardsProvider({ children }) {
 
 export const useBoards = () => {
     const context = useContext(BoardsContext);
-    return context || { boards: [], activeBoard: null, loading: false, fetchBoards: () => { }, fetchBoardFull: () => { }, createBoard: () => { }, updateBoard: () => { }, deleteBoard: () => { }, moveCard: () => { } };
+    return context || { boards: [], activeBoard: null, loading: false, fetchBoards: () => { }, fetchBoardFull: () => { }, createBoard: () => { }, updateBoard: () => { }, deleteBoard: () => { }, moveCard: () => { }, createColumn: () => { } };
 };

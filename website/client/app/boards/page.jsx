@@ -1,20 +1,19 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useBoards } from '@/context/BoardsContext';
 import BoardCard from '@/components/kanban/BoardCard';
+import CreateBoardModal from '@/components/kanban/CreateBoardModal';
 
 export default function BoardsPage() {
     const { boards, fetchBoards, createBoard, loading } = useBoards();
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         fetchBoards();
     }, [fetchBoards]);
 
-    const handleNewBoard = async () => {
-        const name = prompt('Enter board name:');
-        if (name) {
-            await createBoard({ name });
-        }
+    const handleNewBoard = async (data) => {
+        await createBoard(data);
     };
 
     return (
@@ -25,12 +24,18 @@ export default function BoardsPage() {
                     <p className="text-sm text-text-secondary">Manage your projects and tasks across multiple boards.</p>
                 </div>
                 <button
-                    onClick={handleNewBoard}
+                    onClick={() => setIsModalOpen(true)}
                     className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md transition-colors text-sm font-semibold flex items-center gap-2"
                 >
                     <span>+</span> New Board
                 </button>
             </header>
+
+            <CreateBoardModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onCreate={handleNewBoard}
+            />
 
             {loading && boards.length === 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -43,7 +48,7 @@ export default function BoardsPage() {
                     <span className="text-4xl mb-4 block">■</span>
                     <p className="text-lg">No boards found</p>
                     <button
-                        onClick={handleNewBoard}
+                        onClick={() => setIsModalOpen(true)}
                         className="mt-4 text-accent hover:underline text-sm"
                     >
                         Create your first board
