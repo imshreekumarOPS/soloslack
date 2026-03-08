@@ -10,7 +10,7 @@ import { cardsApi } from '@/lib/api/cardsApi';
 
 export default function BoardViewPage() {
     const { id } = useParams();
-    const { activeBoard, fetchBoardFull, moveCard, createColumn, loading } = useBoards();
+    const { activeBoard, fetchBoardFull, moveCard, createColumn, updateColumn, deleteColumn, loading } = useBoards();
     const [selectedCard, setSelectedCard] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
@@ -107,6 +107,8 @@ export default function BoardViewPage() {
                     onAddCard={handleAddCard}
                     onAddColumn={() => setIsColumnModalOpen(true)}
                     onCardClick={handleCardClick}
+                    onUpdateColumn={updateColumn}
+                    onDeleteColumn={deleteColumn}
                 />
             </div>
 

@@ -13,7 +13,7 @@ import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
 
-export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard, onAddCard, onAddColumn, onCardClick }) {
+export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard, onAddCard, onAddColumn, onCardClick, onUpdateColumn, onDeleteColumn }) {
     const [activeId, setActiveId] = useState(null);
     const [localCardsByColumn, setLocalCardsByColumn] = useState(cardsByColumn);
 
@@ -128,6 +128,8 @@ export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard,
                         cards={localCardsByColumn[col._id] || []}
                         onCardClick={onCardClick}
                         onAddCard={onAddCard}
+                        onUpdateColumn={onUpdateColumn}
+                        onDeleteColumn={onDeleteColumn}
                     />
                 ))}
 

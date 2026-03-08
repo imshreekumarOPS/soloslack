@@ -9,6 +9,7 @@ const BoardsContext = createContext(null);
 export function BoardsProvider({ children }) {
     const [boards, setBoards] = useState([]);
     const [activeBoard, setActiveBoard] = useState(null);
+    const [isCreateBoardModalOpen, setIsCreateBoardModalOpen] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const fetchBoards = useCallback(async () => {
@@ -54,6 +55,27 @@ export function BoardsProvider({ children }) {
         return res.data;
     };
 
+    const updateColumn = async (id, data) => {
+        const res = await columnsApi.update(id, data);
+        if (activeBoard?.board?._id) {
+            setActiveBoard(prev => ({
+                ...prev,
+                columns: prev.columns.map(col => col._id === id ? { ...col, ...res.data } : col)
+            }));
+        }
+        return res.data;
+    };
+
+    const deleteColumn = async (id) => {
+        await columnsApi.delete(id);
+        if (activeBoard?.board?._id) {
+            setActiveBoard(prev => ({
+                ...prev,
+                columns: prev.columns.filter(col => col._id !== id)
+            }));
+        }
+    };
+
     const updateBoard = async (id, data) => {
         const res = await boardsApi.update(id, data);
         setBoards(prev => prev.map(b => b._id === id ? res.data : b));
@@ -80,8 +102,8 @@ export function BoardsProvider({ children }) {
 
     return (
         <BoardsContext.Provider value={{
-            boards, activeBoard, loading,
-            setActiveBoard, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard, createColumn
+            boards, activeBoard, loading, isCreateBoardModalOpen,
+            setIsCreateBoardModalOpen, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard, createColumn, updateColumn, deleteColumn
         }}>
             {children}
         </BoardsContext.Provider>
@@ -90,5 +112,5 @@ export function BoardsProvider({ children }) {
 
 export const useBoards = () => {
     const context = useContext(BoardsContext);
-    return context || { boards: [], activeBoard: null, loading: false, fetchBoards: () => { }, fetchBoardFull: () => { }, createBoard: () => { }, updateBoard: () => { }, deleteBoard: () => { }, moveCard: () => { }, createColumn: () => { } };
+    return context || { boards: [], activeBoard: null, loading: false, isCreateBoardModalOpen: false, setIsCreateBoardModalOpen: () => { }, fetchBoards: () => { }, fetchBoardFull: () => { }, createBoard: () => { }, updateBoard: () => { }, deleteBoard: () => { }, moveCard: () => { }, createColumn: () => { }, updateColumn: () => { }, deleteColumn: () => { } };
 };

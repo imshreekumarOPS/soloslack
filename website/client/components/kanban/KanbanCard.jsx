@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Badge from '../ui/Badge';
 import { cn } from '@/lib/utils/cn';
+import AnimatedIcon from '../ui/AnimatedIcon';
 
 export default function KanbanCard({ card, onClick, isOverlay }) {
     const {
@@ -46,8 +47,13 @@ export default function KanbanCard({ card, onClick, isOverlay }) {
             )}
 
             {card.linkedNoteId && (
-                <div className="mt-3 flex items-center gap-1.5 text-[10px] text-accent-hover font-medium bg-accent-subtle/30 w-fit px-1.5 py-0.5 rounded">
-                    <span>📄</span> Linked Note
+                <div className="mt-3 flex items-center gap-1.5 text-[10px] text-accent-hover font-medium bg-accent-subtle/30 w-fit px-1.5 py-0.5 rounded overflow-hidden">
+                    <AnimatedIcon
+                        type="notes"
+                        active={true}
+                        className="w-3.5 h-3.5"
+                    />
+                    Linked Note
                 </div>
             )}
         </div>
