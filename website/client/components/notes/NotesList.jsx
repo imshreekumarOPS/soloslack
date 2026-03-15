@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useNotes } from '@/context/NotesContext';
 import NoteSearch from './NoteSearch';
 import NoteItem from './NoteItem';
@@ -5,9 +6,9 @@ import NoteItem from './NoteItem';
 export default function NotesList() {
     const { notes, activeNote, setActiveNote, fetchNotes, createNote, loading } = useNotes();
 
-    const handleSearch = (search) => {
+    const handleSearch = useCallback((search) => {
         fetchNotes({ search });
-    };
+    }, [fetchNotes]);
 
     const handleNewNote = async () => {
         await createNote({ title: '', body: '' });

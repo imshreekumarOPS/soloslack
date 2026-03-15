@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FileText } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { notesApi } from '@/lib/api/notesApi';
@@ -10,7 +10,7 @@ export default function NotePicker({ isOpen, onClose, onSelect }) {
     const [notes, setNotes] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    const fetchNotes = async (search = '') => {
+    const fetchNotes = useCallback(async (search = '') => {
         setLoading(true);
         try {
             const res = await notesApi.getAll({ search, limit: 10 });
@@ -20,7 +20,7 @@ export default function NotePicker({ isOpen, onClose, onSelect }) {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         if (isOpen) {
