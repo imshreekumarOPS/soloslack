@@ -1,4 +1,4 @@
-# Notes & Kanban Workspace
+# Soloslack
 
 A premium, glassmorphic, and highly animated productivity workspace that combines flexible **Markdown Notes** with an intuitive **Kanban Board** system.
 
@@ -39,7 +39,7 @@ A premium, glassmorphic, and highly animated productivity workspace that combine
 1.  **Clone the repository**:
     ```bash
     git clone <repository-url>
-    cd notes-kanban
+    cd soloslack
     ```
 
 2.  **Setup the Server**:
@@ -61,6 +61,10 @@ A premium, glassmorphic, and highly animated productivity workspace that combine
     ```bash
     cd ../client
     npm install
+    ```
+    Create a `.env.local` file in `website/client`:
+    ```env
+    NEXT_PUBLIC_API_URL=http://localhost:5000/api
     ```
     Start the client:
     ```bash
