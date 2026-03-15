@@ -41,6 +41,9 @@ export default function NoteEditor() {
     const debouncedBody = useDebounce(body, 1500);
 
     const handleAutoSave = useCallback(async () => {
+        // Ensure debounced values have caught up to current inputs
+        if (debouncedTitle !== title || debouncedBody !== body) return;
+
         // Prevent race condition: ensure we are saving the note that matches the content
         if (!activeNote || activeNoteIdRef.current !== activeNote._id) return;
         
@@ -61,7 +64,7 @@ export default function NoteEditor() {
             setSaveStatus('error');
             console.error(err);
         }
-    }, [debouncedTitle, debouncedBody, activeNote, updateNote]);
+    }, [debouncedTitle, debouncedBody, title, body, activeNote, updateNote]);
 
     useEffect(() => {
         handleAutoSave();
@@ -191,7 +194,7 @@ export default function NoteEditor() {
                             type="text"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            placeholder="Note Title"
+                            placeholder="New Note"
                             className="text-3xl font-bold bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted w-full"
                         />
                         <textarea
@@ -203,7 +206,7 @@ export default function NoteEditor() {
                     </div>
                 ) : (
                     <div className="space-y-6">
-                        <h1 className="text-3xl font-bold text-text-primary">{title || 'Untitled'}</h1>
+                        <h1 className="text-3xl font-bold text-text-primary">{title || 'New Note'}</h1>
                         <MarkdownRenderer content={body} />
                     </div>
                 )}

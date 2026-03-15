@@ -2,7 +2,7 @@
 import { useState, useRef } from 'react';
 import Modal from '../ui/Modal';
 
-const AI_PROMPT = `I want to import a Kanban board into 'Notban'. Please generate a JSON object representing the board with the following structure:
+const AI_PROMPT = `I want to import a Kanban board into 'SoloSlack'. Please generate a JSON object representing the board with the following structure:
 {
   "board": { 
     "name": "Board Name", 
@@ -89,7 +89,7 @@ export default function ImportBoardModal({ isOpen, onClose, onImport }) {
                     </h3>
                     <ul className="text-xs text-text-secondary space-y-2 list-disc pl-4">
                         <li>Upload a previously exported <code className="text-accent">.json</code> file.</li>
-                        <li>Or paste a JSON object matching the Notban board schema.</li>
+                        <li>Or paste a JSON object matching the SoloSlack board schema.</li>
                         <li>Use the AI Prompt button to get a template for your favorite LLM.</li>
                     </ul>
                     

@@ -10,7 +10,7 @@ export default function NotesList() {
     };
 
     const handleNewNote = async () => {
-        await createNote({ title: 'New Note', body: '' });
+        await createNote({ title: '', body: '' });
     };
 
     return (

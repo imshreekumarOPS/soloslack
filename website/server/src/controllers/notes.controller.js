@@ -59,12 +59,6 @@ exports.createNote = async (req, res, next) => {
     try {
         const { title, body, tags, isPinned } = req.body;
 
-        if (!title) {
-            const error = new Error('Title is required');
-            error.statusCode = 400;
-            throw error;
-        }
-
         const note = await Note.create({
             title,
             body,

@@ -89,23 +89,23 @@ body {
   padding: 0;
 }
 
-/* Custom scrollbar for dark mode */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0f0f;
+  background: var(--surface-base);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333333;
+  background: var(--border-default);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444444;
+  background: var(--border-strong);
 }
 
 /* ===== Dashboard Animations ===== */

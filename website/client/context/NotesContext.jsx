@@ -31,13 +31,23 @@ export function NotesProvider({ children }) {
     const updateNote = async (id, data) => {
         const res = await notesApi.update(id, data);
         setNotes(prev => prev.map(n => n._id === id ? res.data : n));
-        if (activeNote?._id === id) setActiveNote(res.data);
+        setActiveNote(currentActive => {
+            if (currentActive?._id === id) {
+                return res.data;
+            }
+            return currentActive;
+        });
     };
 
     const deleteNote = async (id) => {
         await notesApi.delete(id);
         setNotes(prev => prev.filter(n => n._id !== id));
-        if (activeNote?._id === id) setActiveNote(null);
+        setActiveNote(currentActive => {
+            if (currentActive?._id === id) {
+                return null;
+            }
+            return currentActive;
+        });
     };
 
     return (

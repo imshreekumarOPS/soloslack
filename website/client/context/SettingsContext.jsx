@@ -32,6 +32,10 @@ export function SettingsProvider({ children }) {
         }
         
         setTheme(savedTheme);
+        // Apply theme to document root
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+        document.documentElement.style.colorScheme = savedTheme;
+        
         fetchServerEnv();
         setIsLoaded(true);
     }, []);

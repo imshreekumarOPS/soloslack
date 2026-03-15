@@ -14,7 +14,7 @@ export default function NoteItem({ note, isActive, onClick }) {
             )}
         >
             <h4 className="text-sm font-medium text-text-primary truncate mb-1">
-                {note.title || 'Untitled'}
+                {note.title || 'New Note'}
             </h4>
             <p className="text-xs text-text-muted line-clamp-2">
                 {cleanBody || 'No content'}
