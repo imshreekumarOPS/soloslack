@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 export default function Modal({ isOpen, onClose, title, children }) {
@@ -31,7 +32,7 @@ export default function Modal({ isOpen, onClose, title, children }) {
                         onClick={onClose}
                         className="text-text-secondary hover:text-text-primary p-1 rounded-md hover:bg-surface-hover"
                     >
-                        ✕
+                        <X className="w-4 h-4" />
                     </button>
                 </header>
 

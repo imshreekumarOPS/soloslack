@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
 
 export default function NoteSearch({ onSearch }) {
     const [query, setQuery] = useState('');
@@ -14,7 +15,7 @@ export default function NoteSearch({ onSearch }) {
     return (
         <div className="p-3 border-b border-border-subtle">
             <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">🔍</span>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted w-4 h-4" />
                 <input
                     type="text"
                     placeholder="Search notes..."

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect } from 'react';
+import { FileText } from 'lucide-react';
 import { useNotes } from '@/context/NotesContext';
 import NotesList from '@/components/notes/NotesList';
 import NoteEditor from '@/components/notes/NoteEditor';
@@ -19,7 +20,7 @@ export default function NotesPage() {
                     <NoteEditor />
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-4">
-                        <span className="text-6xl">📝</span>
+                        <FileText className="w-16 h-16 opacity-20" />
                         <p className="text-lg">Select a note to view or create a new one</p>
                     </div>
                 )}

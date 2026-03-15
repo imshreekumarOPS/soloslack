@@ -3,8 +3,11 @@ import { CSS } from '@dnd-kit/utilities';
 import Badge from '../ui/Badge';
 import { cn } from '@/lib/utils/cn';
 import AnimatedIcon from '../ui/AnimatedIcon';
+import { stripMarkdown } from '@/lib/utils/markdown';
 
 export default function KanbanCard({ card, onClick, isOverlay }) {
+    const cleanDescription = stripMarkdown(card.description);
+    
     const {
         attributes,
         listeners,
@@ -40,9 +43,9 @@ export default function KanbanCard({ card, onClick, isOverlay }) {
                 {card.title}
             </h5>
 
-            {card.description && (
+            {cleanDescription && (
                 <p className="text-xs text-text-muted line-clamp-2 leading-relaxed">
-                    {card.description}
+                    {cleanDescription}
                 </p>
             )}
 

@@ -6,15 +6,17 @@ import KanbanBoard from '@/components/kanban/KanbanBoard';
 import CardModal from '@/components/kanban/CardModal';
 import CreateColumnModal from '@/components/kanban/CreateColumnModal';
 import CreateCardModal from '@/components/kanban/CreateCardModal';
+import ImportBoardModal from '@/components/kanban/ImportBoardModal';
 import { cardsApi } from '@/lib/api/cardsApi';
 
 export default function BoardViewPage() {
     const { id } = useParams();
-    const { activeBoard, fetchBoardFull, moveCard, createColumn, updateColumn, deleteColumn, loading } = useBoards();
+    const { activeBoard, fetchBoardFull, moveCard, createColumn, updateColumn, deleteColumn, importBoard, loading } = useBoards();
     const [selectedCard, setSelectedCard] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [activeColumnId, setActiveColumnId] = useState(null);
 
     useEffect(() => {
@@ -64,6 +66,53 @@ export default function BoardViewPage() {
         fetchBoardFull(id);
     };
 
+    const handleExport = () => {
+        if (!activeBoard) return;
+
+        // Clean up data for export - only include necessary fields
+        const exportData = {
+            board: {
+                name: activeBoard.board.name,
+                description: activeBoard.board.description
+            },
+            columns: activeBoard.columns.map(col => ({
+                name: col.name,
+                order: col.order,
+                cards: (col.cards || []).map(card => ({
+                    title: card.title,
+                    description: card.description,
+                    priority: card.priority,
+                    tags: card.tags,
+                    order: card.order,
+                    dueDate: card.dueDate,
+                    linkedNoteId: card.linkedNoteId
+                }))
+            }))
+        };
+
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${activeBoard.board.name.replace(/\s+/g, '_')}_export.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImport = async (data) => {
+        try {
+            const res = await importBoard(data);
+            if (res && res.boardId) {
+                window.location.href = `/boards/${res.boardId}`;
+            }
+        } catch (err) {
+            throw err; // Let modal handle error display
+        }
+    };
+
     if (loading && !activeBoard) {
         return (
             <div className="h-full flex items-center justify-center">
@@ -83,15 +132,27 @@ export default function BoardViewPage() {
     return (
         <div className="h-full flex flex-col overflow-hidden bg-surface-base">
             <header className="h-14 border-b border-border-subtle px-6 flex items-center justify-between shrink-0 bg-surface-raised/20">
-                <div>
-                    <h1 className="text-lg font-bold text-text-primary">{activeBoard.board.name}</h1>
-                    <p className="text-xs text-text-muted">{activeBoard.board.description}</p>
+                <div className="min-w-0">
+                    <h1 className="text-lg font-bold text-text-primary truncate">{activeBoard.board.name}</h1>
+                    <p className="text-xs text-text-muted truncate">{activeBoard.board.description}</p>
                 </div>
 
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="text-xs font-semibold border border-border-subtle hover:bg-surface-hover text-text-primary px-3 py-1.5 rounded-md transition-colors flex items-center gap-2"
+                    >
+                        <span>Import</span>
+                    </button>
+                    <button
+                        onClick={handleExport}
+                        className="text-xs font-semibold border border-border-subtle hover:bg-surface-hover text-text-primary px-3 py-1.5 rounded-md transition-colors flex items-center gap-2"
+                    >
+                        <span>Export</span>
+                    </button>
+                    <button
                         onClick={() => setIsColumnModalOpen(true)}
-                        className="text-xs font-semibold bg-accent hover:bg-accent-hover text-white px-3 py-1.5 rounded-md transition-colors"
+                        className="text-xs font-semibold bg-accent hover:bg-accent-hover text-white px-3 py-1.5 rounded-md transition-colors whitespace-nowrap"
                     >
                         + Add Column
                     </button>
@@ -128,6 +189,11 @@ export default function BoardViewPage() {
                 isOpen={isCardModalOpen}
                 onClose={() => setIsCardModalOpen(false)}
                 onCreate={handleCreateCard}
+            />
+            <ImportBoardModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onImport={handleImport}
             />
         </div>
     );

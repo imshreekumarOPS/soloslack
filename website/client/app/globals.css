@@ -1,28 +1,29 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
-  /* Base surfaces (dark mode) */
-  --color-surface-base: #0f0f0f;
-  --color-surface-raised: #1a1a1a;
-  --color-surface-overlay: #232323;
-  --color-surface-hover: #2a2a2a;
-  --color-surface-active: #333333;
+  /* Base surfaces */
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
 
   /* Borders */
-  --color-border-subtle: #2a2a2a;
-  --color-border-default: #3a3a3a;
-  --color-border-strong: #555555;
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
 
   /* Text */
-  --color-text-primary: #f0f0f0;
-  --color-text-secondary: #9a9a9a;
-  --color-text-muted: #5a5a5a;
-  --color-text-inverse: #0f0f0f;
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
 
   /* Accent (Primary) */
   --color-accent: #6366f1;
   --color-accent-hover: #4f52d1;
-  --color-accent-subtle: #1e1f4a;
+  --color-accent-subtle: var(--accent-subtle);
 
   /* Priority colors */
   --color-priority-low: #22c55e;
@@ -37,15 +38,47 @@
 }
 
 :root {
-  --background: #0f0f0f;
-  --foreground: #f0f0f0;
+  --surface-base: #ffffff;
+  --surface-raised: #f8fafc;
+  --surface-overlay: #f1f5f9;
+  --surface-hover: #e2e8f0;
+  --surface-active: #cbd5e1;
+
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+
+  --accent-subtle: #e0e7ff;
+  
+  --background: var(--surface-base);
+  --foreground: var(--text-primary);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --background: #ffffff;
-    --foreground: #171717;
-  }
+.dark {
+  --surface-base: #0f0f0f;
+  --surface-raised: #1a1a1a;
+  --surface-overlay: #232323;
+  --surface-hover: #2a2a2a;
+  --surface-active: #333333;
+
+  --border-subtle: #2a2a2a;
+  --border-default: #3a3a3a;
+  --border-strong: #555555;
+
+  --text-primary: #f0f0f0;
+  --text-secondary: #9a9a9a;
+  --text-muted: #5a5a5a;
+  --text-inverse: #0f0f0f;
+
+  --accent-subtle: #1e1f4a;
+
+  --background: var(--surface-base);
+  --foreground: var(--text-primary);
 }
 
 body {
@@ -174,3 +207,40 @@ body {
 .accent-strip-5 { background: #06b6d4; }
 .accent-strip-6 { background: #ef4444; }
 .accent-strip-7 { background: #f97316; }
+/* ===== Markdown Typography Tweaks ===== */
+.prose {
+    font-variant-ligatures: common-ligatures;
+    max-width: none; /* Allow prose to take full width */
+}
+
+/* Ensure list bullets are visible in Dark Mode */
+.prose ul {
+    list-style-type: disc !important;
+}
+
+.prose ol {
+    list-style-type: decimal !important;
+}
+
+.prose li::marker {
+    color: var(--accent); /* Premium touch for markers */
+}
+
+.prose pre::-webkit-scrollbar {
+    height: 4px;
+}
+
+.prose pre::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.prose pre::-webkit-scrollbar-thumb {
+    background: var(--border-default);
+    border-radius: 10px;
+}
+
+.prose table {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}

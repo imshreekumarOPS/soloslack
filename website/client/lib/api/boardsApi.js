@@ -22,4 +22,5 @@ export const boardsApi = {
     create: (data) => request('/boards', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, d) => request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
     delete: (id) => request(`/boards/${id}`, { method: 'DELETE' }),
+    import: (data) => request('/boards/import', { method: 'POST', body: JSON.stringify(data) }),
 };

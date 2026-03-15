@@ -155,3 +155,56 @@ exports.deleteBoard = async (req, res, next) => {
         next(error);
     }
 };
+// @desc    Import board (with columns and cards)
+// @route   POST /api/boards/import
+exports.importBoard = async (req, res, next) => {
+    try {
+        const { board, columns } = req.body;
+
+        if (!board || !board.name) {
+            const error = new Error('Invalid board data');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // 1. Create the new board
+        const newBoard = await Board.create({
+            name: `${board.name} (Imported)`,
+            description: board.description,
+        });
+
+        // 2. Create columns and preserve cards
+        if (columns && Array.isArray(columns)) {
+            for (const col of columns) {
+                const newColumn = await Column.create({
+                    boardId: newBoard._id,
+                    name: col.name,
+                    order: col.order,
+                });
+
+                if (col.cards && Array.isArray(col.cards)) {
+                    const cardsToCreate = col.cards.map(card => ({
+                        boardId: newBoard._id,
+                        columnId: newColumn._id,
+                        title: card.title,
+                        description: card.description,
+                        priority: card.priority,
+                        tags: card.tags,
+                        order: card.order,
+                        dueDate: card.dueDate,
+                        linkedNoteId: card.linkedNoteId,
+                    }));
+                    await Card.insertMany(cardsToCreate);
+                }
+            }
+        }
+
+        res.status(201).json({
+            success: true,
+            data: { boardId: newBoard._id },
+            message: 'Board imported successfully',
+        });
+    } catch (error) {
+        next(error);
+    }
+};

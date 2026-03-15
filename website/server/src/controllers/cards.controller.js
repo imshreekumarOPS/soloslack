@@ -1,4 +1,5 @@
 const Card = require('../models/Card');
+const Note = require('../models/Note');
 
 // @desc    Get all cards for a column or board
 // @route   GET /api/cards
@@ -75,6 +76,13 @@ exports.createCard = async (req, res, next) => {
             order,
         });
 
+        // 1.5 Handle reciprocal linking to Note
+        if (linkedNoteId) {
+            await Note.findByIdAndUpdate(linkedNoteId, {
+                $addToSet: { linkedCards: card._id }
+            });
+        }
+
         res.status(201).json({
             success: true,
             data: card,
@@ -89,15 +97,39 @@ exports.createCard = async (req, res, next) => {
 // @route   PATCH /api/cards/:id
 exports.updateCard = async (req, res, next) => {
     try {
-        const card = await Card.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
-            runValidators: true,
-        });
-        if (!card) {
+        const oldCard = await Card.findById(req.params.id);
+        if (!oldCard) {
             const error = new Error('Card not found');
             error.statusCode = 404;
             throw error;
         }
+
+        const card = await Card.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true,
+        });
+
+        // Handle reciprocal linking change
+        if (req.body.linkedNoteId !== undefined) {
+            const oldNoteId = oldCard.linkedNoteId;
+            const newNoteId = req.body.linkedNoteId;
+
+            if (oldNoteId?.toString() !== newNoteId?.toString()) {
+                // Remove from old note
+                if (oldNoteId) {
+                    await Note.findByIdAndUpdate(oldNoteId, {
+                        $pull: { linkedCards: card._id }
+                    });
+                }
+                // Add to new note
+                if (newNoteId) {
+                    await Note.findByIdAndUpdate(newNoteId, {
+                        $addToSet: { linkedCards: card._id }
+                    });
+                }
+            }
+        }
+
         res.status(200).json({
             success: true,
             data: card,
@@ -191,6 +223,14 @@ exports.deleteCard = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+
+        // Remove from linked note if exists
+        if (card.linkedNoteId) {
+            await Note.findByIdAndUpdate(card.linkedNoteId, {
+                $pull: { linkedCards: card._id }
+            });
+        }
+
         // Re-index column
         await reindexColumn(card.columnId);
         res.status(204).send();

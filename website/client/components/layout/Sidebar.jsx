@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { Sun, Moon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
@@ -19,6 +20,23 @@ export default function Sidebar() {
     const [boardsExpanded, setBoardsExpanded] = useState(true);
     const [hoveredItem, setHoveredItem] = useState(null);
     const [settingsHovered, setSettingsHovered] = useState(false);
+    const [theme, setTheme] = useState('dark');
+    const [boardSearch, setBoardSearch] = useState('');
+
+    useEffect(() => {
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        setTheme(savedTheme);
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+        document.documentElement.style.colorScheme = savedTheme;
+    }, []);
+
+    const toggleTheme = () => {
+        const newTheme = theme === 'dark' ? 'light' : 'dark';
+        setTheme(newTheme);
+        localStorage.setItem('theme', newTheme);
+        document.documentElement.classList.toggle('dark', newTheme === 'dark');
+        document.documentElement.style.colorScheme = newTheme;
+    };
 
     useEffect(() => {
         fetchBoards();
@@ -141,7 +159,18 @@ export default function Sidebar() {
 
                     {boardsExpanded && (
                         <div className="space-y-0.5 animate-fade-in">
-                            {boards.map((board, i) => (
+                            <div className="px-3 mb-2">
+                                <input
+                                    type="text"
+                                    placeholder="Filter boards..."
+                                    value={boardSearch}
+                                    onChange={(e) => setBoardSearch(e.target.value)}
+                                    className="w-full bg-surface-overlay border border-border-subtle rounded-md px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent/40"
+                                />
+                            </div>
+                            {boards
+                                .filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase()))
+                                .map((board, i) => (
                                 <Link
                                     key={board._id}
                                     href={`/boards/${board._id}`}
@@ -196,6 +225,19 @@ export default function Sidebar() {
                     <svg className="w-3.5 h-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                     </svg>
+                </button>
+            </div>
+
+            {/* ===== Theme Toggle ===== */}
+            <div className="px-3 pb-4">
+                <button
+                    onClick={toggleTheme}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded-lg transition-all duration-200"
+                >
+                    <span className="w-8 h-8 rounded-lg bg-surface-overlay flex items-center justify-center">
+                        {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                    </span>
+                    {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                 </button>
             </div>
 

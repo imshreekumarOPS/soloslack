@@ -1,4 +1,5 @@
 const Note = require('../models/Note');
+const Card = require('../models/Card');
 
 // @desc    Get all notes
 // @route   GET /api/notes
@@ -117,6 +118,9 @@ exports.deleteNote = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+
+        // Nullify linkedNoteId on all cards that were linked to this note
+        await Card.updateMany({ linkedNoteId: req.params.id }, { linkedNoteId: null });
 
         res.status(204).send();
     } catch (error) {

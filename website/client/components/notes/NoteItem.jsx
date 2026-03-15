@@ -1,7 +1,10 @@
 import { cn } from '@/lib/utils/cn';
 import { timeAgo } from '@/lib/utils/formatDate';
+import { stripMarkdown } from '@/lib/utils/markdown';
 
 export default function NoteItem({ note, isActive, onClick }) {
+    const cleanBody = stripMarkdown(note.body);
+    
     return (
         <div
             onClick={onClick}
@@ -14,7 +17,7 @@ export default function NoteItem({ note, isActive, onClick }) {
                 {note.title || 'Untitled'}
             </h4>
             <p className="text-xs text-text-muted line-clamp-2">
-                {note.body ? note.body.substring(0, 100) : 'No content'}
+                {cleanBody || 'No content'}
             </p>
             <div className="mt-2 text-[10px] text-text-muted">
                 {timeAgo(note.updatedAt)}

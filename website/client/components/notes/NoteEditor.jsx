@@ -1,10 +1,14 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNotes } from '@/context/NotesContext';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import { timeAgo } from '@/lib/utils/formatDate';
 import MarkdownRenderer from './MarkdownRenderer';
 import { cn } from '@/lib/utils/cn';
+import CardPicker from '../kanban/CardPicker';
+import { cardsApi } from '@/lib/api/cardsApi';
+import { notesApi } from '@/lib/api/notesApi';
+import { Link as LinkIcon, Trash2, Square, Save } from 'lucide-react';
 
 export default function NoteEditor() {
     const { activeNote, updateNote, deleteNote } = useNotes();
@@ -12,21 +16,41 @@ export default function NoteEditor() {
     const [body, setBody] = useState('');
     const [mode, setMode] = useState('edit'); // 'edit' or 'preview'
     const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'saving', 'saved'
+    const [isCardPickerOpen, setIsCardPickerOpen] = useState(false);
+
+    // Track content in refs to prevent closure staleness during note switches
+    const contentRef = useRef({ title: '', body: '' });
+    const activeNoteIdRef = useRef(activeNote?._id);
 
     useEffect(() => {
         if (activeNote) {
-            setTitle(activeNote.title);
-            setBody(activeNote.body);
+            setTitle(activeNote.title || '');
+            setBody(activeNote.body || '');
+            contentRef.current = { title: activeNote.title || '', body: activeNote.body || '' };
+            activeNoteIdRef.current = activeNote._id;
             setSaveStatus('idle');
         }
-    }, [activeNote]);
+    }, [activeNote?._id]); // Only reset when ID changes
+
+    // Update ref whenever state changes
+    useEffect(() => {
+        contentRef.current = { title, body };
+    }, [title, body]);
 
     const debouncedTitle = useDebounce(title, 1500);
     const debouncedBody = useDebounce(body, 1500);
 
     const handleAutoSave = useCallback(async () => {
-        if (!activeNote) return;
-        if (debouncedTitle === activeNote.title && debouncedBody === activeNote.body) return;
+        // Prevent race condition: ensure we are saving the note that matches the content
+        if (!activeNote || activeNoteIdRef.current !== activeNote._id) return;
+        
+        const hasChanged = debouncedTitle !== activeNote.title || debouncedBody !== activeNote.body;
+        if (!hasChanged) return;
+
+        if (!debouncedTitle.trim()) {
+            setSaveStatus('error');
+            return;
+        }
 
         setSaveStatus('saving');
         try {
@@ -43,9 +67,56 @@ export default function NoteEditor() {
         handleAutoSave();
     }, [debouncedTitle, debouncedBody, handleAutoSave]);
 
+    // Immediate save on note switch or unmount
+    useEffect(() => {
+        const currentId = activeNote?._id;
+        const initialTitle = activeNote?.title;
+        const initialBody = activeNote?.body;
+
+        return () => {
+            // Check if there are unsaved changes on unmount/switch
+            if (currentId && (contentRef.current.title !== initialTitle || contentRef.current.body !== initialBody)) {
+                // If title is empty, we don't save to avoid breaking validation
+                if (contentRef.current.title.trim()) {
+                    updateNote(currentId, { 
+                        title: contentRef.current.title, 
+                        body: contentRef.current.body 
+                    });
+                }
+            }
+        };
+    }, [activeNote?._id, updateNote]); // Critical: dependency is ID, cleanup handles the save
+
     const handleDelete = () => {
         if (confirm('Are you sure you want to delete this note?')) {
             deleteNote(activeNote._id);
+        }
+    };
+
+    const handleLinkCard = async (card) => {
+        try {
+            await cardsApi.update(card._id, { linkedNoteId: activeNote._id });
+            // Re-fetch the note to update linkedCards list
+            const res = await notesApi.getById(activeNote._id);
+            // We use setActiveNote from context to update the UI
+            // But activeNote is managed by context, so we should probably call a refresh function if it existed
+            // For now, let's just trigger a "dummy" update that includes the current title to avoid validation error
+            await updateNote(activeNote._id, { title: activeNote.title });
+        } catch (err) {
+            console.error('Failed to link card:', err);
+        }
+    };
+
+    const handleManualSave = async () => {
+        if (!activeNote || !title.trim()) return;
+        setSaveStatus('saving');
+        try {
+            await updateNote(activeNote._id, { title, body });
+            setSaveStatus('saved');
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (err) {
+            setSaveStatus('error');
+            console.error(err);
         }
     };
 
@@ -64,6 +135,13 @@ export default function NoteEditor() {
                     {saveStatus === 'saved' && (
                         <span className="text-[10px] text-success">Saved ✓</span>
                     )}
+
+                    <button
+                        onClick={() => setIsCardPickerOpen(true)}
+                        className="ml-4 text-[10px] bg-accent/10 text-accent hover:bg-accent/20 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1.5"
+                    >
+                        <LinkIcon className="w-3.5 h-3.5" /> Link Card
+                    </button>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -89,11 +167,19 @@ export default function NoteEditor() {
                     </div>
 
                     <button
+                        onClick={handleManualSave}
+                        className="p-1.5 rounded-md text-text-secondary hover:text-accent hover:bg-accent/10 transition-colors"
+                        title="Save Note"
+                    >
+                        <Save className="w-4 h-4" />
+                    </button>
+
+                    <button
                         onClick={handleDelete}
                         className="p-1.5 rounded-md text-text-secondary hover:text-red-400 hover:bg-red-400/10 transition-colors"
                         title="Delete Note"
                     >
-                        🗑
+                        <Trash2 className="w-4 h-4" />
                     </button>
                 </div>
             </header>
@@ -123,20 +209,30 @@ export default function NoteEditor() {
                 )}
 
                 {/* Linked Cards Section */}
-                {activeNote.linkedCards?.length > 0 && (
-                    <div className="mt-12 pt-8 border-t border-border-subtle">
-                        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-widest mb-4">Linked Kanban Cards</h3>
-                        <div className="flex flex-wrap gap-3">
-                            {activeNote.linkedCards.map(cardId => (
-                                <div key={cardId} className="px-3 py-2 bg-surface-raised border border-border-subtle rounded-lg text-xs flex items-center gap-2">
-                                    <span className="text-md">■</span>
-                                    <span className="text-text-primary">{cardId}</span>
-                                </div>
-                            ))}
-                        </div>
+                <div className="mt-12 pt-8 border-t border-border-subtle">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-widest">Linked Kanban Cards</h3>
                     </div>
-                )}
+                    <div className="flex flex-wrap gap-3">
+                        {activeNote.linkedCards?.length > 0 ? (
+                            activeNote.linkedCards.map(cardId => (
+                                <div key={cardId} className="px-3 py-2 bg-surface-raised border border-border-subtle rounded-lg text-xs flex items-center gap-2">
+                                    <Square className="w-3 h-3 fill-emerald-500 text-emerald-500" />
+                                    <span className="text-text-primary text-[10px] truncate max-w-[150px]">{cardId}</span>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-[10px] text-text-muted italic">No cards linked yet</p>
+                        )}
+                    </div>
+                </div>
             </div>
+
+            <CardPicker
+                isOpen={isCardPickerOpen}
+                onClose={() => setIsCardPickerOpen(false)}
+                onSelect={handleLinkCard}
+            />
         </div>
     );
 }

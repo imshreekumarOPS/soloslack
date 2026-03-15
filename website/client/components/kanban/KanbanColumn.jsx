@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { MoreHorizontal, Edit2, Trash2, Plus } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
@@ -83,7 +84,7 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
                         className="text-text-muted hover:text-text-primary transition-colors p-1"
                     >
-                        ···
+                        <MoreHorizontal className="w-4 h-4" />
                     </button>
 
                     {isMenuOpen && (
@@ -95,13 +96,13 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                                 }}
                                 className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-primary transition-colors flex items-center gap-2"
                             >
-                                <span>✏️</span> Rename
+                                <Edit2 className="w-3.5 h-3.5" /> Rename
                             </button>
                             <button
                                 onClick={handleDelete}
                                 className="w-full text-left px-3 py-2 text-xs text-error hover:bg-error/10 transition-colors flex items-center gap-2"
                             >
-                                <span>🗑️</span> Delete
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
                             </button>
                         </div>
                     )}
@@ -128,7 +129,7 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                     onClick={() => onAddCard(column._id)}
                     className="w-full text-left p-2 text-xs text-text-muted hover:text-text-primary hover:bg-surface-hover rounded-md transition-all flex items-center gap-2"
                 >
-                    <span className="text-lg leading-none">+</span> Add Card
+                    <Plus className="w-4 h-4" /> Add Card
                 </button>
             </footer>
         </div>

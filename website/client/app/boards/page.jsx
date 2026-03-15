@@ -7,6 +7,7 @@ import CreateBoardModal from '@/components/kanban/CreateBoardModal';
 export default function BoardsPage() {
     const { boards, fetchBoards, createBoard, loading } = useBoards();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         fetchBoards();
@@ -23,12 +24,21 @@ export default function BoardsPage() {
                     <h1 className="text-2xl font-bold text-text-primary">Your Boards</h1>
                     <p className="text-sm text-text-secondary">Manage your projects and tasks across multiple boards.</p>
                 </div>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md transition-colors text-sm font-semibold flex items-center gap-2"
-                >
-                    <span>+</span> New Board
-                </button>
+                <div className="flex items-center gap-4">
+                    <input
+                        type="text"
+                        placeholder="Search boards..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="bg-surface-raised border border-border-subtle rounded-md px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent w-64"
+                    />
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md transition-colors text-sm font-semibold flex items-center gap-2 whitespace-nowrap"
+                    >
+                        <span>+</span> New Board
+                    </button>
+                </div>
             </header>
 
             <CreateBoardModal
@@ -56,9 +66,11 @@ export default function BoardsPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {boards.map((board) => (
-                        <BoardCard key={board._id} board={board} />
-                    ))}
+                    {boards
+                        .filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((board) => (
+                            <BoardCard key={board._id} board={board} />
+                        ))}
                 </div>
             )}
         </div>

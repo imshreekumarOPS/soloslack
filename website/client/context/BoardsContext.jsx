@@ -100,10 +100,16 @@ export function BoardsProvider({ children }) {
         }
     };
 
+    const importBoard = async (data) => {
+        const res = await boardsApi.import(data);
+        await fetchBoards();
+        return res.data;
+    };
+
     return (
         <BoardsContext.Provider value={{
             boards, activeBoard, loading, isCreateBoardModalOpen,
-            setIsCreateBoardModalOpen, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard, createColumn, updateColumn, deleteColumn
+            setIsCreateBoardModalOpen, fetchBoards, fetchBoardFull, createBoard, updateBoard, deleteBoard, moveCard, createColumn, updateColumn, deleteColumn, importBoard
         }}>
             {children}
         </BoardsContext.Provider>
