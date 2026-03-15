@@ -8,6 +8,7 @@ import CreateColumnModal from '@/components/kanban/CreateColumnModal';
 import CreateCardModal from '@/components/kanban/CreateCardModal';
 import ImportBoardModal from '@/components/kanban/ImportBoardModal';
 import { cardsApi } from '@/lib/api/cardsApi';
+import { exportBoardToJson } from '@/lib/utils/exportUtils';
 
 export default function BoardViewPage() {
     const { id } = useParams();
@@ -68,38 +69,7 @@ export default function BoardViewPage() {
 
     const handleExport = () => {
         if (!activeBoard) return;
-
-        // Clean up data for export - only include necessary fields
-        const exportData = {
-            board: {
-                name: activeBoard.board.name,
-                description: activeBoard.board.description
-            },
-            columns: activeBoard.columns.map(col => ({
-                name: col.name,
-                order: col.order,
-                cards: (col.cards || []).map(card => ({
-                    title: card.title,
-                    description: card.description,
-                    priority: card.priority,
-                    tags: card.tags,
-                    order: card.order,
-                    dueDate: card.dueDate,
-                    linkedNoteId: card.linkedNoteId
-                }))
-            }))
-        };
-
-        const dataStr = JSON.stringify(exportData, null, 2);
-        const dataBlob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(dataBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${activeBoard.board.name.replace(/\s+/g, '_')}_export.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        exportBoardToJson(activeBoard);
     };
 
     const handleImport = async (data) => {

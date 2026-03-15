@@ -1,11 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
+import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils/cn';
 import CreateBoardModal from '@/components/kanban/CreateBoardModal';
+import DeleteBoardModal from '@/components/kanban/DeleteBoardModal';
 import AnimatedIcon from '@/components/ui/AnimatedIcon';
 
 const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#ef4444', '#f97316'];
@@ -17,26 +19,13 @@ function getBoardColor(index) {
 export default function Sidebar() {
     const pathname = usePathname();
     const { boards, fetchBoards, createBoard, setIsCreateBoardModalOpen } = useBoards();
+    const { theme, updateTheme } = useSettings();
     const [boardsExpanded, setBoardsExpanded] = useState(true);
     const [hoveredItem, setHoveredItem] = useState(null);
     const [settingsHovered, setSettingsHovered] = useState(false);
-    const [theme, setTheme] = useState('dark');
     const [boardSearch, setBoardSearch] = useState('');
-
-    useEffect(() => {
-        const savedTheme = localStorage.getItem('theme') || 'dark';
-        setTheme(savedTheme);
-        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-        document.documentElement.style.colorScheme = savedTheme;
-    }, []);
-
-    const toggleTheme = () => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.classList.toggle('dark', newTheme === 'dark');
-        document.documentElement.style.colorScheme = newTheme;
-    };
+    const [deletingBoard, setDeletingBoard] = useState(null);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
     useEffect(() => {
         fetchBoards();
@@ -48,6 +37,13 @@ export default function Sidebar() {
 
     const handleCreateBoard = async (data) => {
         await createBoard(data);
+    };
+    
+    const handleDeleteClick = (e, board) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDeletingBoard(board);
+        setIsDeleteModalOpen(true);
     };
 
     const navItems = [
@@ -171,22 +167,30 @@ export default function Sidebar() {
                             {boards
                                 .filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase()))
                                 .map((board, i) => (
-                                <Link
-                                    key={board._id}
-                                    href={`/boards/${board._id}`}
-                                    className={cn(
-                                        "flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-200 group",
-                                        pathname === `/boards/${board._id}`
-                                            ? "bg-surface-hover text-text-primary font-medium"
-                                            : "text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary"
-                                    )}
-                                >
-                                    <span
-                                        className="w-2 h-2 rounded-full shrink-0 transition-transform group-hover:scale-125"
-                                        style={{ backgroundColor: getBoardColor(i) }}
-                                    />
-                                    <span className="truncate">{board.name}</span>
-                                </Link>
+                                <div key={board._id} className="relative group">
+                                    <Link
+                                        href={`/boards/${board._id}`}
+                                        className={cn(
+                                            "flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-200",
+                                            pathname === `/boards/${board._id}`
+                                                ? "bg-surface-hover text-text-primary font-medium"
+                                                : "text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary"
+                                        )}
+                                    >
+                                        <span
+                                            className="w-2 h-2 rounded-full shrink-0 transition-transform group-hover:scale-125"
+                                            style={{ backgroundColor: getBoardColor(i) }}
+                                        />
+                                        <span className="truncate pr-6">{board.name}</span>
+                                    </Link>
+                                    <button
+                                        onClick={(e) => handleDeleteClick(e, board)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-text-muted hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                                        title="Delete Board"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             ))}
                             <button
                                 onClick={handleNewBoard}
@@ -209,29 +213,41 @@ export default function Sidebar() {
 
             {/* ===== Footer / Settings ===== */}
             <div className="relative p-3">
-                <button
+                <Link
+                    href="/settings"
                     onMouseEnter={() => setSettingsHovered(true)}
                     onMouseLeave={() => setSettingsHovered(false)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded-xl transition-all duration-200 group"
+                    className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-all duration-200 group",
+                        pathname === '/settings'
+                            ? "bg-accent/15 text-accent font-semibold border border-accent/20"
+                            : "text-text-secondary hover:text-text-primary hover:bg-surface-hover border border-transparent"
+                    )}
                 >
-                    <span className="w-8 h-8 rounded-lg bg-surface-overlay flex items-center justify-center group-hover:bg-surface-active transition-colors overflow-hidden">
+                    <span className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center transition-colors overflow-hidden",
+                        pathname === '/settings' ? "bg-accent/20" : "bg-surface-overlay group-hover:bg-surface-active"
+                    )}>
                         <AnimatedIcon
                             type="settings"
-                            active={settingsHovered}
+                            active={settingsHovered || pathname === '/settings'}
                             className="w-4 h-4"
                         />
                     </span>
                     Settings
-                    <svg className="w-3.5 h-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className={cn(
+                        "w-3.5 h-3.5 ml-auto transition-all",
+                        pathname === '/settings' ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                     </svg>
-                </button>
+                </Link>
             </div>
 
             {/* ===== Theme Toggle ===== */}
             <div className="px-3 pb-4">
                 <button
-                    onClick={toggleTheme}
+                    onClick={() => updateTheme(theme === 'dark' ? 'light' : 'dark')}
                     className="w-full flex items-center gap-3 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded-lg transition-all duration-200"
                 >
                     <span className="w-8 h-8 rounded-lg bg-surface-overlay flex items-center justify-center">
@@ -241,6 +257,12 @@ export default function Sidebar() {
                 </button>
             </div>
 
+            <DeleteBoardModal 
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                boardId={deletingBoard?._id}
+                boardName={deletingBoard?.name}
+            />
         </aside >
     );
 }

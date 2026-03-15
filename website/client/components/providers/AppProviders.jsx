@@ -1,6 +1,7 @@
 'use client';
 import { NotesProvider } from "@/context/NotesContext";
 import { BoardsProvider, useBoards } from "@/context/BoardsContext";
+import { SettingsProvider } from "@/context/SettingsContext";
 import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
 import CreateBoardModal from "@/components/kanban/CreateBoardModal";
 
@@ -26,12 +27,14 @@ function GlobalModals() {
 
 export function AppProviders({ children }) {
     return (
-        <NotesProvider>
-            <BoardsProvider>
-                <KeyboardShortcuts />
-                <GlobalModals />
-                {children}
-            </BoardsProvider>
-        </NotesProvider>
+        <SettingsProvider>
+            <NotesProvider>
+                <BoardsProvider>
+                    <KeyboardShortcuts />
+                    <GlobalModals />
+                    {children}
+                </BoardsProvider>
+            </NotesProvider>
+        </SettingsProvider>
     );
 }
