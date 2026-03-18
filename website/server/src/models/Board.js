@@ -17,6 +17,9 @@ const boardSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        order: { type: Number, default: 0 },
+        isArchived: { type: Boolean, default: false },
+        archivedAt: { type: Date, default: null },
     },
     { timestamps: true }
 );

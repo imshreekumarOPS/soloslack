@@ -3,12 +3,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
 import KanbanBoard from '@/components/kanban/KanbanBoard';
+import BoardCalendar from '@/components/kanban/BoardCalendar';
 import CardModal from '@/components/kanban/CardModal';
 import CreateColumnModal from '@/components/kanban/CreateColumnModal';
 import CreateCardModal from '@/components/kanban/CreateCardModal';
 import ImportBoardModal from '@/components/kanban/ImportBoardModal';
 import { exportBoardToJson } from '@/lib/utils/exportUtils';
-import { Download, Upload, Plus, AlertCircle } from 'lucide-react';
+import { Download, Upload, Plus, AlertCircle, LayoutDashboard, CalendarDays } from 'lucide-react';
 
 export default function BoardViewPage() {
     const { id } = useParams();
@@ -25,6 +26,7 @@ export default function BoardViewPage() {
     const [isCreateCardModalOpen, setIsCreateCardModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [activeColumnId, setActiveColumnId] = useState(null);
+    const [view, setView] = useState('kanban'); // 'kanban' | 'calendar'
 
     useEffect(() => {
         if (id) fetchBoardFull(id);
@@ -159,6 +161,24 @@ export default function BoardViewPage() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
+                    {/* View toggle */}
+                    <div className="flex bg-surface-overlay rounded-md p-0.5 border border-border-default mr-1">
+                        <button
+                            onClick={() => setView('kanban')}
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs transition-colors ${view === 'kanban' ? 'bg-accent text-white' : 'text-text-secondary hover:text-text-primary'}`}
+                            title="Kanban view"
+                        >
+                            <LayoutDashboard className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                            onClick={() => setView('calendar')}
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs transition-colors ${view === 'calendar' ? 'bg-accent text-white' : 'text-text-secondary hover:text-text-primary'}`}
+                            title="Calendar view"
+                        >
+                            <CalendarDays className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => setIsImportModalOpen(true)}
                         className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
@@ -184,16 +204,23 @@ export default function BoardViewPage() {
 
             {/* Board body */}
             <div className="flex-1 overflow-hidden">
-                <KanbanBoard
-                    columns={activeBoard.columns}
-                    cardsByColumn={cardsByColumn}
-                    onMoveCard={moveCard}
-                    onAddCard={handleAddCard}
-                    onAddColumn={() => setIsColumnModalOpen(true)}
-                    onCardClick={handleCardClick}
-                    onUpdateColumn={updateColumn}
-                    onDeleteColumn={deleteColumn}
-                />
+                {view === 'kanban' ? (
+                    <KanbanBoard
+                        columns={activeBoard.columns}
+                        cardsByColumn={cardsByColumn}
+                        onMoveCard={moveCard}
+                        onAddCard={handleAddCard}
+                        onAddColumn={() => setIsColumnModalOpen(true)}
+                        onCardClick={handleCardClick}
+                        onUpdateColumn={updateColumn}
+                        onDeleteColumn={deleteColumn}
+                    />
+                ) : (
+                    <BoardCalendar
+                        columns={activeBoard.columns}
+                        onCardClick={handleCardClick}
+                    />
+                )}
             </div>
 
             {/* Modals */}

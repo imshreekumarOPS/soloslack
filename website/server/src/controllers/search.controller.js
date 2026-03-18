@@ -14,7 +14,7 @@ exports.search = async (req, res, next) => {
         const regex = { $regex: q.trim(), $options: 'i' };
 
         const [notes, cards] = await Promise.all([
-            Note.find({ $or: [{ title: regex }, { body: regex }] })
+            Note.find({ isArchived: false, $or: [{ title: regex }, { body: regex }] })
                 .select('_id title body updatedAt')
                 .sort({ updatedAt: -1 })
                 .limit(10)

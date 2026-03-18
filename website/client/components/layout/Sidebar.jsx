@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Sun, Moon, Trash2, Search } from 'lucide-react';
+import { Sun, Moon, Trash2, Search, Archive, GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -12,6 +12,9 @@ import DeleteBoardModal from '@/components/kanban/DeleteBoardModal';
 import AnimatedIcon from '@/components/ui/AnimatedIcon';
 import UnifiedSearch from '@/components/ui/UnifiedSearch';
 import KeyboardShortcutsModal from '@/components/ui/KeyboardShortcutsModal';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#ef4444', '#f97316'];
 
@@ -19,10 +22,54 @@ function getBoardColor(index) {
     return BOARD_COLORS[index % BOARD_COLORS.length];
 }
 
+function SortableBoardItem({ board, index, pathname, onDeleteClick }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: board._id });
+    const style = { transform: CSS.Transform.toString(transform), transition };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={cn('relative group', isDragging && 'opacity-50 z-50')}
+        >
+            <span
+                className="absolute left-1 top-1/2 -translate-y-1/2 p-1 cursor-grab opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-text-muted touch-none"
+                {...attributes}
+                {...listeners}
+                title="Drag to reorder"
+            >
+                <GripVertical className="w-3 h-3" />
+            </span>
+            <Link
+                href={`/boards/${board._id}`}
+                className={cn(
+                    'flex items-center gap-2.5 pl-6 pr-3 py-2 text-sm rounded-lg transition-all duration-200',
+                    pathname === `/boards/${board._id}`
+                        ? 'bg-surface-hover text-text-primary font-medium'
+                        : 'text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary'
+                )}
+            >
+                <span
+                    className="w-2 h-2 rounded-full shrink-0 transition-transform group-hover:scale-125"
+                    style={{ backgroundColor: getBoardColor(index) }}
+                />
+                <span className="truncate pr-6">{board.name}</span>
+            </Link>
+            <button
+                onClick={(e) => onDeleteClick(e, board)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-text-muted hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                title="Delete Board"
+            >
+                <Trash2 className="w-3.5 h-3.5" />
+            </button>
+        </div>
+    );
+}
+
 export default function Sidebar() {
     const pathname = usePathname();
-    const { boards, fetchBoards, createBoard, setIsCreateBoardModalOpen } = useBoards();
-    const { theme, updateTheme } = useSettings();
+    const { boards, fetchBoards, createBoard, setIsCreateBoardModalOpen, reorderBoards } = useBoards();
+    const { theme, updateTheme, focusMode } = useSettings();
     const [boardsExpanded, setBoardsExpanded] = useState(true);
     const [hoveredItem, setHoveredItem] = useState(null);
     const [settingsHovered, setSettingsHovered] = useState(false);
@@ -31,6 +78,15 @@ export default function Sidebar() {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+    const handleDragEnd = ({ active, over }) => {
+        if (!over || active.id === over.id) return;
+        const oldIndex = boards.findIndex(b => b._id === active.id);
+        const newIndex = boards.findIndex(b => b._id === over.id);
+        reorderBoards(arrayMove(boards, oldIndex, newIndex));
+    };
 
     useEffect(() => {
         fetchBoards();
@@ -99,6 +155,11 @@ export default function Sidebar() {
             path: '/boards',
             type: 'boards'
         },
+        {
+            name: 'Archive',
+            path: '/archive',
+            type: 'archive'
+        },
     ];
 
     const isActive = (path) => {
@@ -107,7 +168,10 @@ export default function Sidebar() {
     };
 
     return (
-        <aside className="w-64 h-screen bg-surface-raised border-r border-border-subtle flex flex-col shrink-0 relative overflow-hidden">
+        <aside className={cn(
+            "h-screen bg-surface-raised border-r border-border-subtle flex flex-col shrink-0 relative overflow-hidden transition-all duration-300 ease-in-out",
+            focusMode ? "w-0 border-none" : "w-64"
+        )}>
             {/* Subtle gradient overlay at top */}
             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-accent/[0.03] to-transparent pointer-events-none" />
 
@@ -168,11 +232,15 @@ export default function Sidebar() {
                             "transition-colors",
                             isActive(item.path) ? "text-accent" : "text-text-muted"
                         )}>
-                            <AnimatedIcon
-                                type={item.type}
-                                active={hoveredItem === item.name || isActive(item.path)}
-                                className="w-5 h-5"
-                            />
+                            {item.type === 'archive' ? (
+                                <Archive className="w-5 h-5" />
+                            ) : (
+                                <AnimatedIcon
+                                    type={item.type}
+                                    active={hoveredItem === item.name || isActive(item.path)}
+                                    className="w-5 h-5"
+                                />
+                            )}
                         </span>
                         {item.name}
                         {isActive(item.path) && (
@@ -220,34 +288,25 @@ export default function Sidebar() {
                                     className="w-full bg-surface-overlay border border-border-subtle rounded-md px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent/40"
                                 />
                             </div>
-                            {boards
-                                .filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase()))
-                                .map((board, i) => (
-                                <div key={board._id} className="relative group">
-                                    <Link
-                                        href={`/boards/${board._id}`}
-                                        className={cn(
-                                            "flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-200",
-                                            pathname === `/boards/${board._id}`
-                                                ? "bg-surface-hover text-text-primary font-medium"
-                                                : "text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary"
-                                        )}
-                                    >
-                                        <span
-                                            className="w-2 h-2 rounded-full shrink-0 transition-transform group-hover:scale-125"
-                                            style={{ backgroundColor: getBoardColor(i) }}
-                                        />
-                                        <span className="truncate pr-6">{board.name}</span>
-                                    </Link>
-                                    <button
-                                        onClick={(e) => handleDeleteClick(e, board)}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-text-muted hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                        title="Delete Board"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            ))}
+                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                <SortableContext
+                                    items={boards.filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase())).map(b => b._id)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    {boards
+                                        .filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase()))
+                                        .map((board, i) => (
+                                            <SortableBoardItem
+                                                key={board._id}
+                                                board={board}
+                                                index={i}
+                                                pathname={pathname}
+                                                onDeleteClick={handleDeleteClick}
+                                            />
+                                        ))
+                                    }
+                                </SortableContext>
+                            </DndContext>
                             <button
                                 onClick={handleNewBoard}
                                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text-muted hover:text-accent hover:bg-accent/5 rounded-lg transition-all duration-200 group"

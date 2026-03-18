@@ -29,6 +29,8 @@ const noteSchema = new mongoose.Schema(
                 ref: 'Card',
             }
         ],
+        isArchived: { type: Boolean, default: false },
+        archivedAt: { type: Date, default: null },
     },
     { timestamps: true }
 );

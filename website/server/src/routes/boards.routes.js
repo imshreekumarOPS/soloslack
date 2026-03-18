@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { getBoards, getBoardById, getBoardFull, createBoard, updateBoard, deleteBoard, importBoard } = require('../controllers/boards.controller');
+const { getBoards, getBoardById, getBoardFull, createBoard, updateBoard, deleteBoard, restoreBoard, permanentDeleteBoard, importBoard, reorderBoards } = require('../controllers/boards.controller');
 
 router.route('/')
     .get(getBoards)
     .post(createBoard);
 
 router.post('/import', importBoard);
+router.patch('/reorder', reorderBoards);
+
+router.patch('/:id/restore', restoreBoard);
+router.delete('/:id/permanent', permanentDeleteBoard);
 
 router.route('/:id')
     .get(getBoardById)

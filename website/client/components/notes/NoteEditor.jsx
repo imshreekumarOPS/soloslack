@@ -1,12 +1,24 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNotes } from '@/context/NotesContext';
+
+// Replace [[Title]] with [Title](wiki://id) for rendering; unresolved → wiki://unresolved
+function preprocessWikiLinks(content, notes) {
+    if (!content || !notes?.length) return content;
+    return content.replace(/\[\[([^\][\n]+)\]\]/g, (match, title) => {
+        const note = notes.find(n => n.title?.toLowerCase() === title.trim().toLowerCase());
+        return note
+            ? `[${title}](wiki://${note._id})`
+            : `[${title}](wiki://unresolved)`;
+    });
+}
 import { timeAgo } from '@/lib/utils/formatDate';
 import MarkdownRenderer from './MarkdownRenderer';
 import { cn } from '@/lib/utils/cn';
 import CardPicker from '../kanban/CardPicker';
 import { cardsApi } from '@/lib/api/cardsApi';
-import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download } from 'lucide-react';
+import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download, Maximize2, Minimize2 } from 'lucide-react';
+import { useSettings } from '@/context/SettingsContext';
 
 // Deterministic tag color from a fixed palette
 const TAG_PALETTE = [
@@ -36,7 +48,8 @@ const PRIORITY_DOT = {
 };
 
 export default function NoteEditor() {
-    const { activeNote, updateNote, deleteNote, refreshActiveNote } = useNotes();
+    const { notes, activeNote, setActiveNote, updateNote, deleteNote, refreshActiveNote } = useNotes();
+    const { focusMode, setFocusMode } = useSettings();
 
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
@@ -45,6 +58,12 @@ export default function NoteEditor() {
     const [mode, setMode] = useState('edit'); // 'edit' | 'preview'
     const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
     const [isCardPickerOpen, setIsCardPickerOpen] = useState(false);
+
+    // Wiki autocomplete
+    const [wikiQuery, setWikiQuery] = useState(null); // null = closed
+    const [wikiPickerPos, setWikiPickerPos] = useState({ top: 0, left: 0 });
+    const [wikiSelectedIdx, setWikiSelectedIdx] = useState(0);
+    const textareaRef = useRef(null);
 
     // Refs give closures stable access to the latest values without causing re-renders
     const titleRef = useRef('');
@@ -182,6 +201,91 @@ export default function NoteEditor() {
         URL.revokeObjectURL(url);
     };
 
+    // ── Wiki link autocomplete ────────────────────────────────────────────────
+
+    const wikiSuggestions = useMemo(() => {
+        if (wikiQuery === null) return [];
+        const q = wikiQuery.toLowerCase();
+        return notes
+            .filter(n => n._id !== activeNote?._id && n.title && n.title.toLowerCase().includes(q))
+            .slice(0, 8);
+    }, [wikiQuery, notes, activeNote]);
+
+    const handleBodyChange = (e) => {
+        const val = e.target.value;
+        setBody(val);
+
+        // Detect [[... before cursor (no newline, not yet closed)
+        const pos = e.target.selectionStart;
+        const before = val.slice(0, pos);
+        const m = before.match(/\[\[([^\][\n]*)$/);
+        if (m) {
+            const rect = e.target.getBoundingClientRect();
+            // Estimate caret line from scrollTop + lineHeight
+            const lineHeight = 20;
+            const lines = before.split('\n').length;
+            const approxTop = rect.top + Math.min(lines * lineHeight, rect.height - 40) - e.target.scrollTop;
+            setWikiPickerPos({ top: Math.min(approxTop + lineHeight, window.innerHeight - 240), left: rect.left + 16 });
+            setWikiQuery(m[1]);
+            setWikiSelectedIdx(0);
+        } else {
+            setWikiQuery(null);
+        }
+    };
+
+    const insertWikiLink = (note) => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        const pos = ta.selectionStart;
+        const before = body.slice(0, pos);
+        const openIdx = before.lastIndexOf('[[');
+        const newBody = body.slice(0, openIdx) + `[[${note.title}]]` + body.slice(pos);
+        setBody(newBody);
+        setWikiQuery(null);
+        setTimeout(() => {
+            ta.focus();
+            const newPos = openIdx + note.title.length + 4;
+            ta.setSelectionRange(newPos, newPos);
+        }, 0);
+    };
+
+    const handleTextareaKeyDown = (e) => {
+        if (e.key === 'Escape' && wikiQuery === null && focusMode) {
+            setFocusMode(false);
+            return;
+        }
+        if (wikiQuery === null) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setWikiSelectedIdx(i => Math.min(i + 1, wikiSuggestions.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setWikiSelectedIdx(i => Math.max(i - 1, 0));
+        } else if (e.key === 'Enter' && wikiSuggestions[wikiSelectedIdx]) {
+            e.preventDefault();
+            insertWikiLink(wikiSuggestions[wikiSelectedIdx]);
+        } else if (e.key === 'Escape') {
+            setWikiQuery(null);
+        }
+    };
+
+    // Focus mode keyboard shortcut
+    useEffect(() => {
+        const handler = (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'f') {
+                e.preventDefault();
+                setFocusMode(f => !f);
+            }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [setFocusMode]);
+
+    const handleWikiLink = (noteId) => {
+        const target = notes.find(n => n._id === noteId);
+        if (target) setActiveNote(target);
+    };
+
     const handleAddTag = async (raw) => {
         const tag = raw.trim().toLowerCase().replace(/,/g, '');
         if (!tag || tags.includes(tag) || tag.length > 30) return;
@@ -308,12 +412,27 @@ export default function NoteEditor() {
                     >
                         <Trash2 className="w-4 h-4" />
                     </button>
+
+                    <div className="w-px h-4 bg-border-subtle mx-1" />
+
+                    <button
+                        onClick={() => setFocusMode(f => !f)}
+                        className={cn(
+                            'p-1.5 rounded-md transition-colors',
+                            focusMode
+                                ? 'text-accent bg-accent/10 hover:bg-accent/20'
+                                : 'text-text-secondary hover:text-accent hover:bg-accent/10'
+                        )}
+                        title={focusMode ? 'Exit focus mode (Esc)' : 'Focus mode (Ctrl+Shift+F)'}
+                    >
+                        {focusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
                 </div>
             </header>
 
             {/* Content area */}
             <div className="flex-1 overflow-y-auto">
-                <div className="p-8 max-w-3xl mx-auto w-full">
+                <div className={cn('p-8 mx-auto w-full transition-all duration-300', focusMode ? 'max-w-4xl' : 'max-w-3xl')}>
                     {mode === 'edit' ? (
                         <div className="space-y-4">
                             <input
@@ -351,12 +470,44 @@ export default function NoteEditor() {
                                     className="text-xs bg-transparent outline-none text-text-secondary placeholder:text-text-muted min-w-[70px]"
                                 />
                             </div>
-                            <textarea
-                                value={body}
-                                onChange={(e) => setBody(e.target.value)}
-                                placeholder="Write in markdown…"
-                                className="w-full min-h-[60vh] bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted resize-none font-mono text-sm leading-relaxed"
-                            />
+                            <div className="relative">
+                                <textarea
+                                    ref={textareaRef}
+                                    value={body}
+                                    onChange={handleBodyChange}
+                                    onKeyDown={handleTextareaKeyDown}
+                                    placeholder="Write in markdown… use [[Note Title]] to link notes"
+                                    className="w-full min-h-[60vh] bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted resize-none font-mono text-sm leading-relaxed"
+                                />
+
+                                {/* Wiki autocomplete picker */}
+                                {wikiQuery !== null && wikiSuggestions.length > 0 && (
+                                    <div
+                                        className="fixed z-50 w-64 bg-surface-overlay border border-border-subtle rounded-xl shadow-2xl overflow-hidden"
+                                        style={{ top: wikiPickerPos.top, left: wikiPickerPos.left }}
+                                    >
+                                        <p className="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-widest border-b border-border-subtle bg-surface-base/60">
+                                            Link note
+                                        </p>
+                                        {wikiSuggestions.map((n, i) => (
+                                            <button
+                                                key={n._id}
+                                                onMouseDown={(e) => { e.preventDefault(); insertWikiLink(n); }}
+                                                className={cn(
+                                                    'w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors border-b border-border-subtle/40',
+                                                    i === wikiSelectedIdx ? 'bg-accent/10 text-accent' : 'text-text-primary hover:bg-surface-hover'
+                                                )}
+                                            >
+                                                <span className="text-[10px] opacity-50">↗</span>
+                                                <span className="truncate">{n.title}</span>
+                                            </button>
+                                        ))}
+                                        <p className="px-3 py-1 text-[10px] text-text-muted">
+                                            ↑↓ navigate · Enter select · Esc dismiss
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -376,7 +527,10 @@ export default function NoteEditor() {
                                     ))}
                                 </div>
                             )}
-                            <MarkdownRenderer content={body} />
+                            <MarkdownRenderer
+                                content={preprocessWikiLinks(body, notes)}
+                                onWikiLink={handleWikiLink}
+                            />
                         </div>
                     )}
 

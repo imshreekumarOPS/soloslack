@@ -12,10 +12,13 @@ const populateLinkedCards = (noteId) =>
 exports.getNotes = async (req, res, next) => {
     try {
         const { search, tag, limit = 50, skip = 0 } = req.query;
-        const query = {};
+        const query = { isArchived: false };
 
         if (search && search.trim()) {
-            query.title = { $regex: search.trim(), $options: 'i' };
+            query.$or = [
+                { title: { $regex: search.trim(), $options: 'i' } },
+                { body: { $regex: search.trim(), $options: 'i' } },
+            ];
         }
 
         if (tag && tag.trim()) {
@@ -97,9 +100,53 @@ exports.updateNote = async (req, res, next) => {
     }
 };
 
-// @desc    Delete note
+// @desc    Archive (soft-delete) note
 // @route   DELETE /api/notes/:id
 exports.deleteNote = async (req, res, next) => {
+    try {
+        const note = await Note.findByIdAndUpdate(
+            req.params.id,
+            { isArchived: true, archivedAt: new Date() },
+            { new: true }
+        );
+
+        if (!note) {
+            const error = new Error('Note not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        res.status(204).send();
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Restore note from archive
+// @route   PATCH /api/notes/:id/restore
+exports.restoreNote = async (req, res, next) => {
+    try {
+        const note = await Note.findByIdAndUpdate(
+            req.params.id,
+            { isArchived: false, archivedAt: null },
+            { new: true }
+        ).lean();
+
+        if (!note) {
+            const error = new Error('Note not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        res.status(200).json({ success: true, data: note });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Permanently delete note
+// @route   DELETE /api/notes/:id/permanent
+exports.permanentDeleteNote = async (req, res, next) => {
     try {
         const note = await Note.findByIdAndDelete(req.params.id);
 

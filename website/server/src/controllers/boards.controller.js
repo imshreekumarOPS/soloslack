@@ -6,7 +6,7 @@ const Card = require('../models/Card');
 // @route   GET /api/boards
 exports.getBoards = async (req, res, next) => {
     try {
-        const boards = await Board.find().sort({ isPinned: -1, updatedAt: -1 }).lean();
+        const boards = await Board.find({ isArchived: false }).sort({ order: 1, isPinned: -1, updatedAt: -1 }).lean();
         res.status(200).json({
             success: true,
             count: boards.length,
@@ -134,9 +134,49 @@ exports.updateBoard = async (req, res, next) => {
     }
 };
 
-// @desc    Delete board
+// @desc    Archive (soft-delete) board
 // @route   DELETE /api/boards/:id
 exports.deleteBoard = async (req, res, next) => {
+    try {
+        const board = await Board.findByIdAndUpdate(
+            req.params.id,
+            { isArchived: true, archivedAt: new Date() },
+            { new: true }
+        );
+        if (!board) {
+            const error = new Error('Board not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        res.status(204).send();
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Restore board from archive
+// @route   PATCH /api/boards/:id/restore
+exports.restoreBoard = async (req, res, next) => {
+    try {
+        const board = await Board.findByIdAndUpdate(
+            req.params.id,
+            { isArchived: false, archivedAt: null },
+            { new: true }
+        ).lean();
+        if (!board) {
+            const error = new Error('Board not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        res.status(200).json({ success: true, data: board });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Permanently delete board
+// @route   DELETE /api/boards/:id/permanent
+exports.permanentDeleteBoard = async (req, res, next) => {
     try {
         const boardId = req.params.id;
         const board = await Board.findById(boardId);
@@ -145,19 +185,33 @@ exports.deleteBoard = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
-
-        // Cascade delete columns and cards
         await Promise.all([
             Card.deleteMany({ boardId }),
             Column.deleteMany({ boardId }),
             Board.findByIdAndDelete(boardId),
         ]);
-
         res.status(204).send();
     } catch (error) {
         next(error);
     }
 };
+// @desc    Reorder boards
+// @route   PATCH /api/boards/reorder
+exports.reorderBoards = async (req, res, next) => {
+    try {
+        const { boards } = req.body;
+        if (!Array.isArray(boards)) {
+            const error = new Error('boards must be an array');
+            error.statusCode = 400;
+            throw error;
+        }
+        await Promise.all(boards.map(({ id, order }) => Board.findByIdAndUpdate(id, { order })));
+        res.status(200).json({ success: true, message: 'Boards reordered successfully' });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // @desc    Import board (with columns and cards)
 // @route   POST /api/boards/import
 exports.importBoard = async (req, res, next) => {

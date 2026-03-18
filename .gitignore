@@ -20,7 +20,7 @@ out/
 # production
 build/
 dist/
-docs/
+# docs/
 # misc
 .DS_Store
 *.pem
@@ -34,6 +34,8 @@ docs/
 
 # vercel
 .vercel
+*.ps1
+*.bat
 
 # typescript
 *.tsbuildinfo

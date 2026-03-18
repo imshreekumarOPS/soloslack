@@ -14,6 +14,7 @@ export function SettingsProvider({ children }) {
         PORT: '5000'
     });
     const [theme, setTheme] = useState('dark');
+    const [focusMode, setFocusMode] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
@@ -91,6 +92,8 @@ export function SettingsProvider({ children }) {
             updateServerEnv,
             theme,
             updateTheme,
+            focusMode,
+            setFocusMode,
             isLoaded
         }}>
             {children}

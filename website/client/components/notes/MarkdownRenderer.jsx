@@ -1,9 +1,38 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export default function MarkdownRenderer({ content }) {
+// Custom link renderer — intercepts wiki:// scheme for [[Note]] links
+function WikiAwareLink({ href, children, onWikiLink }) {
+    if (href?.startsWith('wiki://')) {
+        const noteId = href.slice(7);
+        if (noteId === 'unresolved') {
+            return (
+                <span className="text-text-muted/60 cursor-default" title="Note not found">
+                    [[{children}]]
+                </span>
+            );
+        }
+        return (
+            <button
+                onClick={() => onWikiLink?.(noteId)}
+                className="text-accent hover:underline inline-flex items-center gap-0.5 font-medium"
+            >
+                <span className="text-[10px] opacity-70">↗</span>{children}
+            </button>
+        );
+    }
+    return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+}
+
+export default function MarkdownRenderer({ content, onWikiLink }) {
+    const components = {
+        a: ({ href, children }) => (
+            <WikiAwareLink href={href} onWikiLink={onWikiLink}>{children}</WikiAwareLink>
+        ),
+    };
+
     return (
-        <div className="prose dark:prose-invert max-w-none 
+        <div className="prose dark:prose-invert max-w-none
       prose-headings:text-text-primary prose-headings:font-bold
       prose-p:text-text-primary prose-p:leading-relaxed
       prose-a:text-accent prose-a:no-underline hover:prose-a:underline
@@ -15,7 +44,7 @@ export default function MarkdownRenderer({ content }) {
       prose-th:bg-surface-raised prose-th:text-text-primary
       prose-td:text-text-secondary"
         >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{content}</ReactMarkdown>
         </div>
     );
 }

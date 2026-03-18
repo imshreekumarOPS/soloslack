@@ -60,6 +60,16 @@ export function BoardsProvider({ children }) {
         if (activeBoard?.board?._id === id) setActiveBoard(null);
     }, [activeBoard?.board?._id]);
 
+    const reorderBoards = useCallback(async (newBoards) => {
+        setBoards(newBoards);
+        try {
+            await boardsApi.reorder(newBoards.map((b, i) => ({ id: b._id, order: i })));
+        } catch (err) {
+            console.error('Failed to reorder boards:', err);
+            fetchBoards();
+        }
+    }, [fetchBoards]);
+
     const importBoard = useCallback(async (data) => {
         const res = await boardsApi.import(data);
         await fetchBoards();
@@ -199,7 +209,7 @@ export function BoardsProvider({ children }) {
             boards, activeBoard, loading, isCreateBoardModalOpen,
             setIsCreateBoardModalOpen,
             fetchBoards, fetchBoardFull,
-            createBoard, updateBoard, deleteBoard, importBoard,
+            createBoard, updateBoard, deleteBoard, importBoard, reorderBoards,
             createColumn, updateColumn, deleteColumn,
             createCard, updateCard, deleteCard, moveCard,
         }}>
@@ -215,7 +225,7 @@ export const useBoards = () => {
             boards: [], activeBoard: null, loading: false, isCreateBoardModalOpen: false,
             setIsCreateBoardModalOpen: () => {},
             fetchBoards: () => {}, fetchBoardFull: () => {},
-            createBoard: () => {}, updateBoard: () => {}, deleteBoard: () => {}, importBoard: () => {},
+            createBoard: () => {}, updateBoard: () => {}, deleteBoard: () => {}, importBoard: () => {}, reorderBoards: () => {},
             createColumn: () => {}, updateColumn: () => {}, deleteColumn: () => {},
             createCard: () => {}, updateCard: () => {}, deleteCard: () => {}, moveCard: () => {},
         };
