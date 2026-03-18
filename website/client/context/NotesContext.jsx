@@ -15,45 +15,47 @@ export function NotesProvider({ children }) {
             const res = await notesApi.getAll(params);
             setNotes(res.data);
         } catch (err) {
-            console.error(err);
+            console.error('Failed to fetch notes:', err);
         } finally {
             setLoading(false);
         }
     }, []);
 
-    const createNote = async (data) => {
+    const createNote = useCallback(async (data) => {
         const res = await notesApi.create(data);
         setNotes(prev => [res.data, ...prev]);
         setActiveNote(res.data);
         return res.data;
-    };
+    }, []);
 
-    const updateNote = async (id, data) => {
+    const updateNote = useCallback(async (id, data) => {
         const res = await notesApi.update(id, data);
-        setNotes(prev => prev.map(n => n._id === id ? res.data : n));
-        setActiveNote(currentActive => {
-            if (currentActive?._id === id) {
-                return res.data;
-            }
-            return currentActive;
-        });
-    };
+        setNotes(prev => prev.map(n => n._id === id ? { ...n, ...res.data } : n));
+        setActiveNote(current => (current?._id === id ? res.data : current));
+        return res.data;
+    }, []);
 
-    const deleteNote = async (id) => {
+    const deleteNote = useCallback(async (id) => {
         await notesApi.delete(id);
         setNotes(prev => prev.filter(n => n._id !== id));
-        setActiveNote(currentActive => {
-            if (currentActive?._id === id) {
-                return null;
-            }
-            return currentActive;
-        });
-    };
+        setActiveNote(current => (current?._id === id ? null : current));
+    }, []);
+
+    // Refresh activeNote from server (e.g. after linking a card)
+    const refreshActiveNote = useCallback(async (id) => {
+        try {
+            const res = await notesApi.getById(id);
+            setActiveNote(res.data);
+            return res.data;
+        } catch (err) {
+            console.error('Failed to refresh note:', err);
+        }
+    }, []);
 
     return (
         <NotesContext.Provider value={{
             notes, activeNote, loading,
-            setActiveNote, fetchNotes, createNote, updateNote, deleteNote
+            setActiveNote, fetchNotes, createNote, updateNote, deleteNote, refreshActiveNote,
         }}>
             {children}
         </NotesContext.Provider>
@@ -62,5 +64,12 @@ export function NotesProvider({ children }) {
 
 export const useNotes = () => {
     const context = useContext(NotesContext);
-    return context || { notes: [], activeNote: null, loading: false, fetchNotes: () => { }, createNote: () => { }, updateNote: () => { }, deleteNote: () => { } };
+    if (!context) {
+        return {
+            notes: [], activeNote: null, loading: false,
+            setActiveNote: () => {}, fetchNotes: () => {}, createNote: () => {},
+            updateNote: () => {}, deleteNote: () => {}, refreshActiveNote: () => {},
+        };
+    }
+    return context;
 };

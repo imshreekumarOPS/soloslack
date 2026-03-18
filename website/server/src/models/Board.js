@@ -13,6 +13,10 @@ const boardSchema = new mongoose.Schema(
             default: '',
             maxlength: [500, 'Description cannot exceed 500 characters'],
         },
+        isPinned: {
+            type: Boolean,
+            default: false,
+        },
     },
     { timestamps: true }
 );

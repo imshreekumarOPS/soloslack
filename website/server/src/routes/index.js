@@ -6,5 +6,6 @@ router.use('/boards', require('./boards.routes'));
 router.use('/columns', require('./columns.routes'));
 router.use('/cards', require('./cards.routes'));
 router.use('/settings', require('./settings.routes'));
+router.use('/search', require('./search.routes'));
 
 module.exports = router;

@@ -1,4 +1,8 @@
 import Link from 'next/link';
+import { Pin } from 'lucide-react';
+import { cn } from '@/lib/utils/cn';
+import { useBoards } from '@/context/BoardsContext';
+import { timeAgo } from '@/lib/utils/formatDate';
 
 const ACCENT_COLORS = [
     'accent-strip-0',
@@ -11,14 +15,19 @@ const ACCENT_COLORS = [
     'accent-strip-7',
 ];
 
-function getAccentClass(name, index) {
-    // Use index for deterministic but varied color assignment
-    const colorIndex = (index ?? 0) % ACCENT_COLORS.length;
-    return ACCENT_COLORS[colorIndex];
+function getAccentClass(index) {
+    return ACCENT_COLORS[(index ?? 0) % ACCENT_COLORS.length];
 }
 
 export default function BoardCard({ board, index = 0 }) {
-    const accentClass = getAccentClass(board.name, index);
+    const { updateBoard } = useBoards();
+    const accentClass = getAccentClass(index);
+
+    const handlePinToggle = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        updateBoard(board._id, { isPinned: !board.isPinned });
+    };
 
     return (
         <Link
@@ -35,9 +44,25 @@ export default function BoardCard({ board, index = 0 }) {
                             {(board.name || 'B')[0].toUpperCase()}
                         </span>
                     </div>
-                    <span className="text-[10px] text-text-muted group-hover:text-accent transition-colors font-bold uppercase tracking-widest">
-                        Open →
-                    </span>
+
+                    <div className="flex items-center gap-2">
+                        {/* Pin button — always visible when pinned, hover-only when not */}
+                        <button
+                            onClick={handlePinToggle}
+                            title={board.isPinned ? 'Unpin board' : 'Pin board'}
+                            className={cn(
+                                'p-1 rounded-md transition-all duration-200',
+                                board.isPinned
+                                    ? 'text-accent'
+                                    : 'text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent'
+                            )}
+                        >
+                            <Pin className={cn('w-3.5 h-3.5', board.isPinned && 'fill-accent')} />
+                        </button>
+                        <span className="text-[10px] text-text-muted group-hover:text-accent transition-colors font-bold uppercase tracking-widest">
+                            Open →
+                        </span>
+                    </div>
                 </div>
 
                 <h3 className="text-md font-bold text-text-primary mb-1 group-hover:text-accent transition-colors">
@@ -50,7 +75,7 @@ export default function BoardCard({ board, index = 0 }) {
                 <div className="mt-4 pt-3 border-t border-border-subtle/50 flex items-center gap-2">
                     <div className={`w-1.5 h-1.5 rounded-full ${accentClass}`} />
                     <span className="text-[10px] text-text-muted">
-                        Updated {new Date(board.updatedAt).toLocaleDateString()}
+                        Updated {timeAgo(board.updatedAt)}
                     </span>
                 </div>
             </div>

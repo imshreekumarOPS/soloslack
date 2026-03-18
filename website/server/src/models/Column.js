@@ -19,6 +19,11 @@ const columnSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        wipLimit: {
+            type: Number,
+            default: null,
+            min: [1, 'WIP limit must be at least 1'],
+        },
     },
     { timestamps: true }
 );

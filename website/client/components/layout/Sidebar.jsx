@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Sun, Moon, Trash2 } from 'lucide-react';
+import { Sun, Moon, Trash2, Search } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils/cn';
 import CreateBoardModal from '@/components/kanban/CreateBoardModal';
 import DeleteBoardModal from '@/components/kanban/DeleteBoardModal';
 import AnimatedIcon from '@/components/ui/AnimatedIcon';
+import UnifiedSearch from '@/components/ui/UnifiedSearch';
+import KeyboardShortcutsModal from '@/components/ui/KeyboardShortcutsModal';
 
 const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#ef4444', '#f97316'];
 
@@ -27,10 +29,44 @@ export default function Sidebar() {
     const [boardSearch, setBoardSearch] = useState('');
     const [deletingBoard, setDeletingBoard] = useState(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
     useEffect(() => {
         fetchBoards();
     }, [fetchBoards]);
+
+    // Global keyboard shortcuts
+    useEffect(() => {
+        const handler = (e) => {
+            const inInput = ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable;
+
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                setIsSearchOpen(o => !o);
+                return;
+            }
+
+            if (!inInput && e.key === '?') {
+                e.preventDefault();
+                setIsShortcutsOpen(o => !o);
+                return;
+            }
+
+            if (e.altKey && e.key === 'n') {
+                e.preventDefault();
+                window.location.href = '/notes';
+                return;
+            }
+
+            if (e.altKey && e.key === 'b') {
+                e.preventDefault();
+                setIsCreateBoardModalOpen(true);
+            }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [setIsCreateBoardModalOpen]);
 
     const handleNewBoard = () => {
         setIsCreateBoardModalOpen(true);
@@ -95,6 +131,20 @@ export default function Sidebar() {
 
             {/* ===== Divider ===== */}
             <div className="mx-4 h-px bg-gradient-to-r from-transparent via-border-subtle to-transparent" />
+
+            {/* ===== Search trigger ===== */}
+            <div className="px-3 pt-3">
+                <button
+                    onClick={() => setIsSearchOpen(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-surface-overlay border border-border-subtle text-text-muted hover:text-text-primary hover:border-border-default transition-all"
+                >
+                    <Search className="w-3.5 h-3.5 shrink-0" />
+                    <span className="flex-1 text-left text-xs">Search…</span>
+                    <kbd className="text-[10px] font-mono bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle leading-none">
+                        ⌘K
+                    </kbd>
+                </button>
+            </div>
 
             {/* ===== Navigation ===== */}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -263,12 +313,22 @@ export default function Sidebar() {
                 </button>
             </div>
 
-            <DeleteBoardModal 
+            <DeleteBoardModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 boardId={deletingBoard?._id}
                 boardName={deletingBoard?.name}
             />
-        </aside >
+
+            <UnifiedSearch
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+            />
+
+            <KeyboardShortcutsModal
+                isOpen={isShortcutsOpen}
+                onClose={() => setIsShortcutsOpen(false)}
+            />
+        </aside>
     );
 }

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
 import KanbanBoard from '@/components/kanban/KanbanBoard';
@@ -7,134 +7,187 @@ import CardModal from '@/components/kanban/CardModal';
 import CreateColumnModal from '@/components/kanban/CreateColumnModal';
 import CreateCardModal from '@/components/kanban/CreateCardModal';
 import ImportBoardModal from '@/components/kanban/ImportBoardModal';
-import { cardsApi } from '@/lib/api/cardsApi';
 import { exportBoardToJson } from '@/lib/utils/exportUtils';
+import { Download, Upload, Plus, AlertCircle } from 'lucide-react';
 
 export default function BoardViewPage() {
     const { id } = useParams();
-    const { activeBoard, fetchBoardFull, moveCard, createColumn, updateColumn, deleteColumn, importBoard, loading } = useBoards();
-    const [selectedCard, setSelectedCard] = useState(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const {
+        activeBoard, fetchBoardFull, loading,
+        moveCard, createCard, updateCard, deleteCard,
+        createColumn, updateColumn, deleteColumn,
+        importBoard,
+    } = useBoards();
+
+    const [selectedCardId, setSelectedCardId] = useState(null);
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [isCreateCardModalOpen, setIsCreateCardModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [activeColumnId, setActiveColumnId] = useState(null);
 
     useEffect(() => {
-        if (id) {
-            fetchBoardFull(id);
-        }
+        if (id) fetchBoardFull(id);
     }, [id, fetchBoardFull]);
 
-    const handleMoveCard = async (cardId, destination) => {
-        await moveCard(cardId, destination);
-    };
+    // Derive live card from activeBoard — always in sync with optimistic updates
+    const selectedCard = useMemo(() => {
+        if (!selectedCardId || !activeBoard) return null;
+        return activeBoard.columns.flatMap(c => c.cards).find(c => c._id === selectedCardId) ?? null;
+    }, [selectedCardId, activeBoard]);
 
-    const handleAddCard = (columnId) => {
-        setActiveColumnId(columnId);
+    // Memoize cardsByColumn so KanbanBoard's sync effect only fires on real changes
+    const cardsByColumn = useMemo(() => {
+        if (!activeBoard) return {};
+        return Object.fromEntries(
+            activeBoard.columns.map(col => [col._id, col.cards ?? []])
+        );
+    }, [activeBoard]);
+
+    // Board stats for the header
+    const stats = useMemo(() => {
+        if (!activeBoard) return null;
+        const allCards = activeBoard.columns.flatMap(c => c.cards);
+        const now = new Date();
+        return {
+            total: allCards.length,
+            high: allCards.filter(c => c.priority === 'high').length,
+            overdue: allCards.filter(c => c.dueDate && new Date(c.dueDate) < now).length,
+        };
+    }, [activeBoard]);
+
+    // ─── Handlers ───────────────────────────────────────────────────────────
+
+    const handleCardClick = useCallback((card) => {
+        setSelectedCardId(card._id);
         setIsCardModalOpen(true);
-    };
+    }, []);
 
-    const handleCreateCard = async (data) => {
-        await cardsApi.create({
-            boardId: id,
-            columnId: activeColumnId,
-            ...data,
-        });
-        fetchBoardFull(id);
-    };
+    const handleCloseCardModal = useCallback(() => {
+        setIsCardModalOpen(false);
+        setSelectedCardId(null);
+    }, []);
 
-    const handleAddColumn = async (data) => {
-        await createColumn({
-            boardId: id,
-            ...data,
-        });
-    };
+    const handleAddCard = useCallback((columnId) => {
+        setActiveColumnId(columnId);
+        setIsCreateCardModalOpen(true);
+    }, []);
 
-    const handleCardClick = (card) => {
-        setSelectedCard(card);
-        setIsModalOpen(true);
-    };
+    const handleCreateCard = useCallback(async (data) => {
+        await createCard({ boardId: id, columnId: activeColumnId, ...data });
+    }, [createCard, id, activeColumnId]);
 
-    const handleUpdateCard = async (cardId, data) => {
-        await cardsApi.update(cardId, data);
-        // Optimistically update if needed, but for now re-fetch
-        // fetchBoardFull(id);
-    };
+    const handleAddColumn = useCallback(async (data) => {
+        await createColumn({ boardId: id, ...data });
+    }, [createColumn, id]);
 
-    const handleDeleteCard = async (cardId) => {
-        await cardsApi.delete(cardId);
-        fetchBoardFull(id);
-    };
+    const handleUpdateCard = useCallback(async (cardId, data) => {
+        return await updateCard(cardId, data);
+    }, [updateCard]);
 
-    const handleExport = () => {
-        if (!activeBoard) return;
-        exportBoardToJson(activeBoard);
-    };
+    const handleDeleteCard = useCallback(async (cardId) => {
+        await deleteCard(cardId);
+        setIsCardModalOpen(false);
+        setSelectedCardId(null);
+    }, [deleteCard]);
 
-    const handleImport = async (data) => {
-        try {
-            const res = await importBoard(data);
-            if (res && res.boardId) {
-                window.location.href = `/boards/${res.boardId}`;
-            }
-        } catch (err) {
-            throw err; // Let modal handle error display
-        }
-    };
+    const handleExport = useCallback(() => {
+        if (activeBoard) exportBoardToJson(activeBoard);
+    }, [activeBoard]);
+
+    const handleImport = useCallback(async (data) => {
+        const res = await importBoard(data);
+        if (res?.boardId) window.location.href = `/boards/${res.boardId}`;
+    }, [importBoard]);
+
+    // ─── Render ──────────────────────────────────────────────────────────────
 
     if (loading && !activeBoard) {
         return (
             <div className="h-full flex items-center justify-center">
-                <div className="animate-spin text-accent text-3xl">◌</div>
+                <div className="flex flex-col items-center gap-3 text-text-muted">
+                    <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm">Loading board…</span>
+                </div>
             </div>
         );
     }
 
-    if (!activeBoard) return null;
-
-    // Group cards by column for the board component
-    const cardsByColumn = {};
-    activeBoard.columns.forEach(col => {
-        cardsByColumn[col._id] = col.cards || [];
-    });
+    if (!activeBoard) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3 text-text-muted">
+                    <AlertCircle className="w-10 h-10 opacity-30" />
+                    <span className="text-sm">Board not found</span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col overflow-hidden bg-surface-base">
+            {/* Board header */}
             <header className="h-14 border-b border-border-subtle px-6 flex items-center justify-between shrink-0 bg-surface-raised/20">
-                <div className="min-w-0">
-                    <h1 className="text-lg font-bold text-text-primary truncate">{activeBoard.board.name}</h1>
-                    <p className="text-xs text-text-muted truncate">{activeBoard.board.description}</p>
+                <div className="flex items-center gap-4 min-w-0">
+                    <div className="min-w-0">
+                        <h1 className="text-base font-bold text-text-primary truncate leading-tight">
+                            {activeBoard.board.name}
+                        </h1>
+                        {activeBoard.board.description && (
+                            <p className="text-xs text-text-muted truncate">{activeBoard.board.description}</p>
+                        )}
+                    </div>
+
+                    {/* Stats pills */}
+                    {stats && stats.total > 0 && (
+                        <div className="hidden sm:flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] bg-surface-overlay border border-border-subtle px-2 py-0.5 rounded-full text-text-muted">
+                                {stats.total} card{stats.total !== 1 ? 's' : ''}
+                            </span>
+                            {stats.high > 0 && (
+                                <span className="text-[10px] bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full text-red-400">
+                                    {stats.high} high
+                                </span>
+                            )}
+                            {stats.overdue > 0 && (
+                                <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full text-amber-400">
+                                    {stats.overdue} overdue
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={() => setIsImportModalOpen(true)}
-                        className="text-xs font-semibold border border-border-subtle hover:bg-surface-hover text-text-primary px-3 py-1.5 rounded-md transition-colors flex items-center gap-2"
+                        className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                        title="Import board"
                     >
-                        <span>Import</span>
+                        <Upload className="w-4 h-4" />
                     </button>
                     <button
                         onClick={handleExport}
-                        className="text-xs font-semibold border border-border-subtle hover:bg-surface-hover text-text-primary px-3 py-1.5 rounded-md transition-colors flex items-center gap-2"
+                        className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                        title="Export board as JSON"
                     >
-                        <span>Export</span>
+                        <Download className="w-4 h-4" />
                     </button>
                     <button
                         onClick={() => setIsColumnModalOpen(true)}
-                        className="text-xs font-semibold bg-accent hover:bg-accent-hover text-white px-3 py-1.5 rounded-md transition-colors whitespace-nowrap"
+                        className="flex items-center gap-1.5 text-xs font-semibold bg-accent hover:bg-accent/90 text-white px-3 py-1.5 rounded-md transition-colors"
                     >
-                        + Add Column
+                        <Plus className="w-3.5 h-3.5" /> Column
                     </button>
                 </div>
             </header>
 
+            {/* Board body */}
             <div className="flex-1 overflow-hidden">
                 <KanbanBoard
-                    board={activeBoard.board}
                     columns={activeBoard.columns}
                     cardsByColumn={cardsByColumn}
-                    onMoveCard={handleMoveCard}
+                    onMoveCard={moveCard}
                     onAddCard={handleAddCard}
                     onAddColumn={() => setIsColumnModalOpen(true)}
                     onCardClick={handleCardClick}
@@ -143,22 +196,23 @@ export default function BoardViewPage() {
                 />
             </div>
 
+            {/* Modals */}
             <CardModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                isOpen={isCardModalOpen}
+                onClose={handleCloseCardModal}
                 card={selectedCard}
                 onUpdate={handleUpdateCard}
                 onDelete={handleDeleteCard}
+            />
+            <CreateCardModal
+                isOpen={isCreateCardModalOpen}
+                onClose={() => setIsCreateCardModalOpen(false)}
+                onCreate={handleCreateCard}
             />
             <CreateColumnModal
                 isOpen={isColumnModalOpen}
                 onClose={() => setIsColumnModalOpen(false)}
                 onCreate={handleAddColumn}
-            />
-            <CreateCardModal
-                isOpen={isCardModalOpen}
-                onClose={() => setIsCardModalOpen(false)}
-                onCreate={handleCreateCard}
             />
             <ImportBoardModal
                 isOpen={isImportModalOpen}

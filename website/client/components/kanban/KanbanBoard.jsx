@@ -7,110 +7,127 @@ import {
     PointerSensor,
     useSensor,
     useSensors,
-    defaultDropAnimationSideEffects
+    defaultDropAnimationSideEffects,
 } from '@dnd-kit/core';
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
+import { Plus } from 'lucide-react';
 
-export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard, onAddCard, onAddColumn, onCardClick, onUpdateColumn, onDeleteColumn }) {
+export default function KanbanBoard({
+    columns,
+    cardsByColumn,
+    onMoveCard,
+    onAddCard,
+    onAddColumn,
+    onCardClick,
+    onUpdateColumn,
+    onDeleteColumn,
+}) {
     const [activeId, setActiveId] = useState(null);
     const [localCardsByColumn, setLocalCardsByColumn] = useState(cardsByColumn);
 
-    // Sync local state when props change
+    // Sync local state when the server-driven prop changes (after a move completes, etc.)
     useEffect(() => {
         setLocalCardsByColumn(cardsByColumn);
     }, [cardsByColumn]);
 
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 5,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
+    /** Find the column ID that contains a given card/column ID */
     const findColumn = (id) => {
-        if (id in localCardsByColumn) return id;
-        return Object.keys(localCardsByColumn).find((key) =>
-            localCardsByColumn[key].some((card) => card._id === id)
+        if (id in localCardsByColumn) return id; // it's a column ID
+        return Object.keys(localCardsByColumn).find(key =>
+            localCardsByColumn[key].some(card => card._id === id)
         );
     };
 
-    const handleDragStart = (event) => {
-        setActiveId(event.active.id);
+    const handleDragStart = ({ active }) => {
+        setActiveId(active.id);
     };
 
-    const handleDragOver = (event) => {
-        const { active, over } = event;
+    const handleDragOver = ({ active, over }) => {
         if (!over) return;
 
-        const activeId = active.id;
-        const overId = over.id;
+        const activeColumn = findColumn(active.id);
+        const overColumn = findColumn(over.id);
+        if (!activeColumn || !overColumn) return;
 
-        const activeColumn = findColumn(activeId);
-        const overColumn = findColumn(overId);
+        if (activeColumn === overColumn) {
+            // Within-column reorder: update local state for visual feedback
+            const items = localCardsByColumn[activeColumn];
+            const oldIndex = items.findIndex(c => c._id === active.id);
+            const newIndex = items.findIndex(c => c._id === over.id);
+            if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+                setLocalCardsByColumn(prev => ({
+                    ...prev,
+                    [activeColumn]: arrayMove(prev[activeColumn], oldIndex, newIndex),
+                }));
+            }
+            return;
+        }
 
-        if (!activeColumn || !overColumn || activeColumn === overColumn) return;
-
-        setLocalCardsByColumn((prev) => {
+        // Cross-column: move card into the destination column
+        setLocalCardsByColumn(prev => {
             const activeItems = prev[activeColumn];
             const overItems = prev[overColumn];
+            const activeIndex = activeItems.findIndex(c => c._id === active.id);
+            const overIndex = overItems.findIndex(c => c._id === over.id);
 
-            const activeIndex = activeItems.findIndex((item) => item._id === activeId);
-            const overIndex = overItems.findIndex((item) => item._id === overId);
-
-            let newIndex;
-            if (overId in prev) {
-                newIndex = overItems.length;
+            let insertAt;
+            if (over.id in prev) {
+                // Dropped directly on the column container — append
+                insertAt = overItems.length;
             } else {
-                const isBelowLastItem = over && overIndex === overItems.length - 1;
-                const modifier = isBelowLastItem ? 1 : 0;
-                newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length;
+                insertAt = overIndex >= 0 ? overIndex : overItems.length;
             }
 
             return {
                 ...prev,
-                [activeColumn]: prev[activeColumn].filter((item) => item._id !== activeId),
+                [activeColumn]: activeItems.filter(c => c._id !== active.id),
                 [overColumn]: [
-                    ...prev[overColumn].slice(0, newIndex),
-                    prev[activeColumn][activeIndex],
-                    ...prev[overColumn].slice(newIndex, prev[overColumn].length)
-                ]
+                    ...overItems.slice(0, insertAt),
+                    activeItems[activeIndex],
+                    ...overItems.slice(insertAt),
+                ],
             };
         });
     };
 
-    const handleDragEnd = (event) => {
-        const { active, over } = event;
-        const activeId = active.id;
+    const handleDragEnd = ({ active, over }) => {
+        setActiveId(null);
 
         if (!over) {
-            setActiveId(null);
+            // Drag cancelled — revert to server state
             setLocalCardsByColumn(cardsByColumn);
             return;
         }
 
-        const overId = over.id;
-        const activeColumn = findColumn(activeId);
-        const overColumn = findColumn(overId);
+        const activeColumn = findColumn(active.id);
+        const overColumn = findColumn(over.id);
+        if (!activeColumn || !overColumn) return;
 
-        if (!activeColumn || !overColumn) {
-            setActiveId(null);
-            return;
-        }
-
+        // localCardsByColumn is already in the correct visual order (updated by handleDragOver)
         const destCards = localCardsByColumn[overColumn];
-        const newOrder = destCards.findIndex((item) => item._id === activeId);
+        const newOrder = destCards.findIndex(c => c._id === active.id);
 
-        onMoveCard(activeId, { newColumnId: overColumn, newOrder });
-        setActiveId(null);
+        onMoveCard(active.id, {
+            newColumnId: overColumn,
+            newOrder: newOrder < 0 ? 0 : newOrder,
+        });
     };
 
-    const activeCard = activeId ? Object.values(cardsByColumn).flat().find(c => c._id === activeId) : null;
+    const handleDragCancel = () => {
+        setActiveId(null);
+        setLocalCardsByColumn(cardsByColumn);
+    };
+
+    const activeCard = activeId
+        ? Object.values(cardsByColumn).flat().find(c => c._id === activeId)
+        : null;
 
     return (
         <DndContext
@@ -119,13 +136,14 @@ export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard,
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
         >
-            <div className="flex gap-6 p-6 h-full overflow-x-auto items-start bg-surface-base">
-                {columns.map((col) => (
+            <div className="flex gap-5 p-6 h-full overflow-x-auto items-start bg-surface-base">
+                {columns.map(col => (
                     <KanbanColumn
                         key={col._id}
                         column={col}
-                        cards={localCardsByColumn[col._id] || []}
+                        cards={localCardsByColumn[col._id] ?? []}
                         onCardClick={onCardClick}
                         onAddCard={onAddCard}
                         onUpdateColumn={onUpdateColumn}
@@ -135,24 +153,20 @@ export default function KanbanBoard({ board, columns, cardsByColumn, onMoveCard,
 
                 <button
                     onClick={onAddColumn}
-                    className="w-72 h-12 flex items-center justify-center border-2 border-dashed border-border-subtle rounded-xl text-text-muted hover:text-text-primary hover:border-accent transition-all shrink-0"
+                    className="w-64 h-12 flex items-center justify-center gap-2 border-2 border-dashed border-border-subtle rounded-xl text-text-muted text-sm hover:text-text-primary hover:border-accent transition-all shrink-0"
                 >
-                    + Add Column
+                    <Plus className="w-4 h-4" /> Add Column
                 </button>
             </div>
 
-            <DragOverlay dropAnimation={{
-                sideEffects: defaultDropAnimationSideEffects({
-                    styles: {
-                        active: {
-                            opacity: '0.5',
-                        },
-                    },
-                }),
-            }}>
-                {activeId && activeCard ? (
-                    <KanbanCard card={activeCard} isOverlay />
-                ) : null}
+            <DragOverlay
+                dropAnimation={{
+                    sideEffects: defaultDropAnimationSideEffects({
+                        styles: { active: { opacity: '0.4' } },
+                    }),
+                }}
+            >
+                {activeCard ? <KanbanCard card={activeCard} isOverlay /> : null}
             </DragOverlay>
         </DndContext>
     );

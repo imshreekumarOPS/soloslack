@@ -20,6 +20,7 @@ export const cardsApi = {
         const qs = new URLSearchParams(params).toString();
         return request(`/cards${qs ? '?' + qs : ''}`);
     },
+    getUpcoming: () => request('/cards/upcoming'),
     getById: (id) => request(`/cards/${id}`),
     create: (data) => request('/cards', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, d) => request(`/cards/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),

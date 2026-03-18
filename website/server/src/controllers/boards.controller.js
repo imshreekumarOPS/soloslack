@@ -6,7 +6,7 @@ const Card = require('../models/Card');
 // @route   GET /api/boards
 exports.getBoards = async (req, res, next) => {
     try {
-        const boards = await Board.find().sort({ updatedAt: -1 }).lean();
+        const boards = await Board.find().sort({ isPinned: -1, updatedAt: -1 }).lean();
         res.status(200).json({
             success: true,
             count: boards.length,
@@ -76,7 +76,7 @@ exports.getBoardFull = async (req, res, next) => {
 // @route   POST /api/boards
 exports.createBoard = async (req, res, next) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, columns: templateColumns } = req.body;
         if (!name) {
             const error = new Error('Board name is required');
             error.statusCode = 400;
@@ -85,9 +85,12 @@ exports.createBoard = async (req, res, next) => {
 
         const board = await Board.create({ name, description });
 
-        // Create default columns
-        const defaultCols = ['To Do', 'In Progress', 'Done'];
-        const columnDocs = defaultCols.map((colName, index) => ({
+        // Use provided template columns or fall back to defaults
+        const colNames = (Array.isArray(templateColumns) && templateColumns.length > 0)
+            ? templateColumns
+            : ['To Do', 'In Progress', 'Done'];
+
+        const columnDocs = colNames.map((colName, index) => ({
             boardId: board._id,
             name: colName,
             order: index,

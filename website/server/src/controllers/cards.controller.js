@@ -1,6 +1,28 @@
 const Card = require('../models/Card');
 const Note = require('../models/Note');
 
+// @desc    Get cards that are overdue or due within the next 7 days
+// @route   GET /api/cards/upcoming
+exports.getUpcomingCards = async (req, res, next) => {
+    try {
+        const now = new Date();
+        const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        const cards = await Card.find({
+            dueDate: { $ne: null, $lte: sevenDaysLater },
+            isArchived: false,
+        })
+            .sort({ dueDate: 1 })
+            .limit(20)
+            .populate('boardId', 'name accentColor')
+            .lean();
+
+        res.status(200).json({ success: true, count: cards.length, data: cards });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // @desc    Get all cards for a column or board
 // @route   GET /api/cards
 exports.getCards = async (req, res, next) => {

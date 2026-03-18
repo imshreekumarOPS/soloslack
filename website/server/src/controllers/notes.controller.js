@@ -1,37 +1,43 @@
 const Note = require('../models/Note');
 const Card = require('../models/Card');
 
+const populateLinkedCards = (noteId) =>
+    Card.find({ linkedNoteId: noteId, isArchived: false })
+        .select('_id title priority boardId')
+        .populate('boardId', 'name')
+        .lean();
+
 // @desc    Get all notes
 // @route   GET /api/notes
 exports.getNotes = async (req, res, next) => {
     try {
-        const { search, limit = 50, skip = 0 } = req.query;
-        let query = {};
+        const { search, tag, limit = 50, skip = 0 } = req.query;
+        const query = {};
 
-        if (search) {
-            query.title = { $regex: search, $options: 'i' };
+        if (search && search.trim()) {
+            query.title = { $regex: search.trim(), $options: 'i' };
         }
 
-        const notes = await Note.find(query)
-            .sort({ isPinned: -1, updatedAt: -1 })
-            .limit(Number(limit))
-            .skip(Number(skip))
-            .lean();
+        if (tag && tag.trim()) {
+            query.tags = tag.trim().toLowerCase();
+        }
 
-        const count = await Note.countDocuments(query);
+        const [notes, count] = await Promise.all([
+            Note.find(query)
+                .sort({ isPinned: -1, updatedAt: -1 })
+                .limit(Number(limit))
+                .skip(Number(skip))
+                .lean(),
+            Note.countDocuments(query),
+        ]);
 
-        res.status(200).json({
-            success: true,
-            count,
-            data: notes,
-            message: 'Notes fetched successfully',
-        });
+        res.status(200).json({ success: true, count, data: notes });
     } catch (error) {
         next(error);
     }
 };
 
-// @desc    Get single note
+// @desc    Get single note with populated linked cards
 // @route   GET /api/notes/:id
 exports.getNoteById = async (req, res, next) => {
     try {
@@ -43,11 +49,9 @@ exports.getNoteById = async (req, res, next) => {
             throw error;
         }
 
-        res.status(200).json({
-            success: true,
-            data: note,
-            message: 'Note fetched successfully',
-        });
+        const linkedCards = await populateLinkedCards(req.params.id);
+
+        res.status(200).json({ success: true, data: { ...note, linkedCards } });
     } catch (error) {
         next(error);
     }
@@ -59,18 +63,9 @@ exports.createNote = async (req, res, next) => {
     try {
         const { title, body, tags, isPinned } = req.body;
 
-        const note = await Note.create({
-            title,
-            body,
-            tags,
-            isPinned,
-        });
+        const note = await Note.create({ title, body, tags, isPinned });
 
-        res.status(201).json({
-            success: true,
-            data: note,
-            message: 'Note created successfully',
-        });
+        res.status(201).json({ success: true, data: { ...note.toObject(), linkedCards: [] } });
     } catch (error) {
         next(error);
     }
@@ -80,10 +75,13 @@ exports.createNote = async (req, res, next) => {
 // @route   PATCH /api/notes/:id
 exports.updateNote = async (req, res, next) => {
     try {
-        const note = await Note.findByIdAndUpdate(req.params.id, req.body, {
+        // linkedCards is computed dynamically — never write it directly
+        const { linkedCards: _ignored, ...updateData } = req.body;
+
+        const note = await Note.findByIdAndUpdate(req.params.id, updateData, {
             new: true,
             runValidators: true,
-        });
+        }).lean();
 
         if (!note) {
             const error = new Error('Note not found');
@@ -91,11 +89,9 @@ exports.updateNote = async (req, res, next) => {
             throw error;
         }
 
-        res.status(200).json({
-            success: true,
-            data: note,
-            message: 'Note updated successfully',
-        });
+        const linkedCards = await populateLinkedCards(req.params.id);
+
+        res.status(200).json({ success: true, data: { ...note, linkedCards } });
     } catch (error) {
         next(error);
     }
@@ -113,8 +109,7 @@ exports.deleteNote = async (req, res, next) => {
             throw error;
         }
 
-        // Nullify linkedNoteId on all cards that were linked to this note
-        await Card.updateMany({ linkedNoteId: req.params.id }, { linkedNoteId: null });
+        await Card.updateMany({ linkedNoteId: req.params.id }, { $set: { linkedNoteId: null } });
 
         res.status(204).send();
     } catch (error) {

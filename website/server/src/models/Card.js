@@ -50,6 +50,15 @@ const cardSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        checklist: {
+            type: [
+                {
+                    text: { type: String, required: true, trim: true, maxlength: 200 },
+                    completed: { type: Boolean, default: false },
+                },
+            ],
+            default: [],
+        },
     },
     { timestamps: true }
 );
