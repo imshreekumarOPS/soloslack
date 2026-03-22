@@ -20,7 +20,7 @@ out/
 # production
 build/
 dist/
-# docs/
+docs/
 # misc
 .DS_Store
 *.pem
