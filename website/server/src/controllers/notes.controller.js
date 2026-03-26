@@ -11,8 +11,12 @@ const populateLinkedCards = (noteId) =>
 // @route   GET /api/notes
 exports.getNotes = async (req, res, next) => {
     try {
-        const { search, tag, limit = 50, skip = 0 } = req.query;
+        const { search, tag, limit = 50, skip = 0, workspaceId } = req.query;
         const query = { isArchived: false };
+
+        if (workspaceId) {
+            query.workspaceId = workspaceId === 'none' ? null : workspaceId;
+        }
 
         if (search && search.trim()) {
             query.$or = [
@@ -64,9 +68,9 @@ exports.getNoteById = async (req, res, next) => {
 // @route   POST /api/notes
 exports.createNote = async (req, res, next) => {
     try {
-        const { title, body, tags, isPinned } = req.body;
+        const { title, body, tags, isPinned, workspaceId } = req.body;
 
-        const note = await Note.create({ title, body, tags, isPinned });
+        const note = await Note.create({ title, body, tags, isPinned, workspaceId: workspaceId || null });
 
         res.status(201).json({ success: true, data: { ...note.toObject(), linkedCards: [] } });
     } catch (error) {
@@ -100,7 +104,7 @@ exports.updateNote = async (req, res, next) => {
     }
 };
 
-// @desc    Archive (soft-delete) note
+// @desc    Archive (soft-delete) note — also unlinks from cards
 // @route   DELETE /api/notes/:id
 exports.deleteNote = async (req, res, next) => {
     try {
@@ -115,6 +119,12 @@ exports.deleteNote = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+
+        // Unlink any cards that reference this note
+        await Card.updateMany(
+            { linkedNoteId: req.params.id },
+            { $set: { linkedNoteId: null } }
+        );
 
         res.status(204).send();
     } catch (error) {
@@ -139,6 +149,102 @@ exports.restoreNote = async (req, res, next) => {
         }
 
         res.status(200).json({ success: true, data: note });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Bulk archive notes — also unlinks from cards
+// @route   POST /api/notes/bulk-archive
+exports.bulkArchiveNotes = async (req, res, next) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            const error = new Error('ids array is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Unlink any cards that reference these notes
+        await Card.updateMany(
+            { linkedNoteId: { $in: ids } },
+            { $set: { linkedNoteId: null } }
+        );
+
+        const result = await Note.updateMany(
+            { _id: { $in: ids } },
+            { $set: { isArchived: true, archivedAt: new Date() } }
+        );
+
+        res.status(200).json({ success: true, archived: result.modifiedCount });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Bulk restore notes from archive (undo bulk-archive)
+// @route   POST /api/notes/bulk-restore
+exports.bulkRestoreNotes = async (req, res, next) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            const error = new Error('ids array is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        await Note.updateMany(
+            { _id: { $in: ids } },
+            { $set: { isArchived: false, archivedAt: null } }
+        );
+
+        const notes = await Note.find({ _id: { $in: ids } }).lean();
+        res.status(200).json({ success: true, data: notes, restored: notes.length });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Bulk delete notes permanently
+// @route   POST /api/notes/bulk-delete
+exports.bulkDeleteNotes = async (req, res, next) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            const error = new Error('ids array is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        await Card.updateMany(
+            { linkedNoteId: { $in: ids } },
+            { $set: { linkedNoteId: null } }
+        );
+        const result = await Note.deleteMany({ _id: { $in: ids } });
+
+        res.status(200).json({ success: true, deleted: result.deletedCount });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Bulk add tag to notes
+// @route   POST /api/notes/bulk-tag
+exports.bulkTagNotes = async (req, res, next) => {
+    try {
+        const { ids, tag } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0 || !tag?.trim()) {
+            const error = new Error('ids array and tag are required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const result = await Note.updateMany(
+            { _id: { $in: ids } },
+            { $addToSet: { tags: tag.trim().toLowerCase() } }
+        );
+
+        res.status(200).json({ success: true, modified: result.modifiedCount });
     } catch (error) {
         next(error);
     }

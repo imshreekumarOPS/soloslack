@@ -17,8 +17,13 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { cn } from '@/lib/utils/cn';
 import CardPicker from '../kanban/CardPicker';
 import { cardsApi } from '@/lib/api/cardsApi';
-import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download, Maximize2, Minimize2 } from 'lucide-react';
+import { exportNoteToMarkdown, exportNoteToPdf } from '@/lib/utils/exportUtils';
+import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download, Maximize2, Minimize2, FileText, FileDown, Sparkles, ListChecks, Tags, Wand2, Type, ShrinkIcon, Expand, CheckCheck, Eraser, Send, MessageSquare } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
+import { useAI } from '@/context/AIContext';
+import { useUndo } from '@/context/UndoContext';
+import { noteSummaryPrompt, autoTagPrompt, writingAssistantPrompt, noteToCardsPrompt } from '@/lib/ai/prompts';
+import NoteToCardsModal from '../ai/NoteToCardsModal';
 
 // Deterministic tag color from a fixed palette
 const TAG_PALETTE = [
@@ -50,6 +55,8 @@ const PRIORITY_DOT = {
 export default function NoteEditor() {
     const { notes, activeNote, setActiveNote, updateNote, deleteNote, refreshActiveNote } = useNotes();
     const { focusMode, setFocusMode } = useSettings();
+    const { askAI, isConfigured: aiConfigured } = useAI();
+    const { showToast } = useUndo();
 
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
@@ -58,6 +65,21 @@ export default function NoteEditor() {
     const [mode, setMode] = useState('edit'); // 'edit' | 'preview'
     const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
     const [isCardPickerOpen, setIsCardPickerOpen] = useState(false);
+    const [showExportMenu, setShowExportMenu] = useState(false);
+
+    // AI states
+    const [aiLoading, setAiLoading] = useState(null); // 'summary' | 'tags' | 'writing' | 'prompt' | null
+    const [suggestedTags, setSuggestedTags] = useState([]);
+    const [showNoteToCards, setShowNoteToCards] = useState(false);
+    const [showAIMenu, setShowAIMenu] = useState(false);
+    const [showAIPrompt, setShowAIPrompt] = useState(false);
+    const [aiPromptText, setAiPromptText] = useState('');
+    const aiPromptInputRef = useRef(null);
+    const previewRef = useRef(null);
+    // Writing assistant
+    const [writingSelection, setWritingSelection] = useState(null); // { start, end, text }
+    const [showWritingMenu, setShowWritingMenu] = useState(false);
+    const [writingMenuPos, setWritingMenuPos] = useState({ top: 0, left: 0 });
 
     // Wiki autocomplete
     const [wikiQuery, setWikiQuery] = useState(null); // null = closed
@@ -168,7 +190,9 @@ export default function NoteEditor() {
 
     const handleUnlinkCard = async (cardId) => {
         try {
-            await cardsApi.update(cardId, { linkedNoteId: null });
+            // Clear the card's linkedNoteId; swallow 404 if card was already deleted
+            await cardsApi.update(cardId, { linkedNoteId: null }).catch(() => {});
+            // Refresh to recompute linkedCards (server-side query filters out deleted cards)
             await refreshActiveNote(activeNote._id);
         } catch (err) {
             console.error('Failed to unlink card:', err);
@@ -182,23 +206,137 @@ export default function NoteEditor() {
 
     const handleExportMd = () => {
         if (!activeNote) return;
-        const date = new Date(activeNote.updatedAt).toISOString().split('T')[0];
-        const frontmatter = [
-            '---',
-            `title: "${title || 'Untitled'}"`,
-            tags.length > 0 ? `tags: [${tags.map(t => `"${t}"`).join(', ')}]` : 'tags: []',
-            `date: ${date}`,
-            '---',
-            '',
-        ].join('\n');
-        const content = frontmatter + (body || '');
-        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${(title || 'untitled').replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').toLowerCase()}.md`;
-        a.click();
-        URL.revokeObjectURL(url);
+        exportNoteToMarkdown({ ...activeNote, title, body, tags });
+        setShowExportMenu(false);
+    };
+
+    const handleExportPdf = () => {
+        if (!activeNote) return;
+        const renderedHtml = previewRef.current?.innerHTML || '';
+        const result = exportNoteToPdf({ ...activeNote, title, body, tags }, renderedHtml);
+        if (result === false) {
+            showToast({ label: 'Please allow pop-ups to export as PDF', type: 'error' });
+        }
+        setShowExportMenu(false);
+    };
+
+    // ── AI: Smart Summary ─────────────────────────────────────────────────────
+    const handleAISummary = async () => {
+        if (!body.trim() || aiLoading) return;
+        setAiLoading('summary');
+        try {
+            const result = await askAI(noteSummaryPrompt(title, body), { maxTokens: 512 });
+            const summary = `> **AI Summary**\n${result.text.split('\n').map(l => `> ${l}`).join('\n')}\n\n`;
+            setBody(summary + body);
+        } catch (err) {
+            showToast({ label: 'AI Summary failed: ' + err.message, type: 'error' });
+        } finally {
+            setAiLoading(null);
+        }
+    };
+
+    // ── AI: Auto-tag ────────────────────────────────────────────────────────
+    const handleAutoTag = async () => {
+        if (!body.trim() || aiLoading) return;
+        setAiLoading('tags');
+        try {
+            const result = await askAI(autoTagPrompt(title, body), { maxTokens: 100, temperature: 0.5 });
+            const parsed = JSON.parse(result.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
+            if (Array.isArray(parsed)) {
+                const newSuggestions = parsed
+                    .map(t => t.trim().toLowerCase().replace(/\s+/g, '-'))
+                    .filter(t => t && !tags.includes(t))
+                    .slice(0, 3);
+                setSuggestedTags(newSuggestions);
+            }
+        } catch (err) {
+            showToast({ label: 'Auto-tag failed: ' + err.message, type: 'error' });
+        } finally {
+            setAiLoading(null);
+        }
+    };
+
+    const handleAcceptTag = async (tag) => {
+        const newTags = [...tags, tag];
+        setTags(newTags);
+        setSuggestedTags(prev => prev.filter(t => t !== tag));
+        await updateNote(activeNote._id, { tags: newTags });
+    };
+
+    const handleDismissTag = (tag) => {
+        setSuggestedTags(prev => prev.filter(t => t !== tag));
+    };
+
+    // ── AI: Writing Assistant ────────────────────────────────────────────────
+    const handleTextSelect = useCallback(() => {
+        const ta = textareaRef.current;
+        if (!ta || mode !== 'edit') return;
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        if (start === end) {
+            setShowWritingMenu(false);
+            setWritingSelection(null);
+            return;
+        }
+        const text = body.slice(start, end);
+        setWritingSelection({ start, end, text });
+
+        // Position the floating menu near the selection
+        const rect = ta.getBoundingClientRect();
+        const lineHeight = 20;
+        const beforeText = body.slice(0, start);
+        const lines = beforeText.split('\n').length;
+        const top = rect.top + Math.min(lines * lineHeight, rect.height - 40) - ta.scrollTop - 40;
+        const left = rect.left + 16;
+        setWritingMenuPos({ top: Math.max(top, rect.top - 40), left });
+        setShowWritingMenu(true);
+    }, [body, mode]);
+
+    const handleWritingAction = async (action) => {
+        if (!writingSelection || aiLoading) return;
+        setShowWritingMenu(false);
+        setAiLoading('writing');
+        try {
+            const result = await askAI(writingAssistantPrompt(writingSelection.text, action), { maxTokens: 1024 });
+            const newBody = body.slice(0, writingSelection.start) + result.text + body.slice(writingSelection.end);
+            setBody(newBody);
+        } catch (err) {
+            showToast({ label: 'Writing assistant failed: ' + err.message, type: 'error' });
+        } finally {
+            setAiLoading(null);
+            setWritingSelection(null);
+        }
+    };
+
+    // ── AI: Custom Prompt ──────────────────────────────────────────────────────
+    const handleAIPromptSubmit = async () => {
+        const prompt = aiPromptText.trim();
+        if (!prompt || aiLoading) return;
+        setAiLoading('prompt');
+        try {
+            const messages = [
+                {
+                    role: 'system',
+                    content: 'You are a helpful AI assistant embedded in a note-taking app. The user may provide their note as context. Respond in markdown. Be concise and helpful.',
+                },
+            ];
+            if (body.trim()) {
+                messages.push({
+                    role: 'user',
+                    content: `Here is my current note for context:\n\nTitle: ${title}\n\n${body}\n\n---\n\n${prompt}`,
+                });
+            } else {
+                messages.push({ role: 'user', content: prompt });
+            }
+            const result = await askAI(messages, { maxTokens: 1024 });
+            setBody(prev => prev + `\n\n${result.text}`);
+            setAiPromptText('');
+            setShowAIPrompt(false);
+        } catch (err) {
+            showToast({ label: 'AI prompt failed: ' + err.message, type: 'error' });
+        } finally {
+            setAiLoading(null);
+        }
     };
 
     // ── Wiki link autocomplete ────────────────────────────────────────────────
@@ -325,19 +463,19 @@ export default function NoteEditor() {
                         const words = body.trim() ? body.trim().split(/\s+/).length : 0;
                         const mins = Math.max(1, Math.ceil(words / 200));
                         return (
-                            <span className="text-[10px] text-text-muted shrink-0 hidden sm:inline">
+                            <span className="text-[11px] text-text-muted shrink-0 hidden sm:inline">
                                 {words.toLocaleString()} {words === 1 ? 'word' : 'words'} · {mins} min read
                             </span>
                         );
                     })()}
                     {saveStatus === 'saving' && (
-                        <span className="text-[10px] text-text-muted animate-pulse shrink-0">Saving…</span>
+                        <span className="text-[11px] text-text-muted animate-pulse shrink-0">Saving…</span>
                     )}
                     {saveStatus === 'saved' && (
-                        <span className="text-[10px] text-green-400 shrink-0">Saved ✓</span>
+                        <span className="text-[11px] text-green-400 shrink-0">Saved ✓</span>
                     )}
                     {saveStatus === 'error' && (
-                        <span className="text-[10px] text-red-400 shrink-0">Save failed</span>
+                        <span className="text-[11px] text-red-400 shrink-0">Save failed</span>
                     )}
                 </div>
 
@@ -397,13 +535,94 @@ export default function NoteEditor() {
                         <Save className="w-4 h-4" />
                     </button>
 
-                    <button
-                        onClick={handleExportMd}
-                        className="p-1.5 rounded-md text-text-secondary hover:text-accent hover:bg-accent/10 transition-colors"
-                        title="Export as .md"
-                    >
-                        <Download className="w-4 h-4" />
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowExportMenu(prev => !prev)}
+                            className="p-1.5 rounded-md text-text-secondary hover:text-accent hover:bg-accent/10 transition-colors"
+                            title="Export note"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                        {showExportMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
+                                <div className="absolute right-0 top-full mt-1 bg-surface-overlay border border-border-subtle rounded-lg shadow-xl py-1 min-w-[170px] z-50">
+                                    <button
+                                        onClick={handleExportMd}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors flex items-center gap-2"
+                                    >
+                                        <FileText className="w-3.5 h-3.5" /> Export as Markdown
+                                    </button>
+                                    <button
+                                        onClick={handleExportPdf}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors flex items-center gap-2"
+                                    >
+                                        <FileDown className="w-3.5 h-3.5" /> Export as PDF
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* AI Actions Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => aiConfigured && setShowAIMenu(prev => !prev)}
+                            className={cn(
+                                'p-1.5 rounded-md transition-colors',
+                                aiConfigured
+                                    ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-500/10'
+                                    : 'text-text-muted opacity-40 cursor-not-allowed'
+                            )}
+                            title={aiConfigured ? 'AI features' : 'Configure AI in Settings'}
+                            disabled={!aiConfigured}
+                        >
+                            <Sparkles className={cn('w-4 h-4', aiLoading && 'animate-spin')} />
+                        </button>
+                        {aiConfigured && showAIMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowAIMenu(false)} />
+                                <div className="absolute right-0 top-full mt-1 bg-surface-overlay border border-border-subtle rounded-xl shadow-2xl py-1.5 min-w-[200px] z-50">
+                                    <p className="px-3 py-1 text-[11px] font-semibold text-purple-400 uppercase tracking-widest">AI Actions</p>
+                                    <button
+                                        onClick={() => { handleAISummary(); setShowAIMenu(false); }}
+                                        disabled={aiLoading || !body.trim()}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-purple-500/10 hover:text-purple-300 transition-colors flex items-center gap-2 disabled:opacity-30"
+                                    >
+                                        <ListChecks className="w-3.5 h-3.5" /> Summarize note
+                                    </button>
+                                    <button
+                                        onClick={() => { handleAutoTag(); setShowAIMenu(false); }}
+                                        disabled={aiLoading || !body.trim()}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-purple-500/10 hover:text-purple-300 transition-colors flex items-center gap-2 disabled:opacity-30"
+                                    >
+                                        <Tags className="w-3.5 h-3.5" /> Suggest tags
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowNoteToCards(true); setShowAIMenu(false); }}
+                                        disabled={aiLoading || !body.trim()}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-purple-500/10 hover:text-purple-300 transition-colors flex items-center gap-2 disabled:opacity-30"
+                                    >
+                                        <ListChecks className="w-3.5 h-3.5" /> Break into cards
+                                    </button>
+                                    <div className="mx-2 my-1 border-t border-border-subtle" />
+                                    <button
+                                        onClick={() => {
+                                            setShowAIPrompt(prev => !prev);
+                                            setShowAIMenu(false);
+                                            setTimeout(() => aiPromptInputRef.current?.focus(), 100);
+                                        }}
+                                        disabled={aiLoading}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-purple-500/10 hover:text-purple-300 transition-colors flex items-center gap-2 disabled:opacity-30"
+                                    >
+                                        <MessageSquare className="w-3.5 h-3.5" /> Custom prompt
+                                    </button>
+                                    <div className="mx-2 my-1 border-t border-border-subtle" />
+                                    <p className="px-3 py-0.5 text-[11px] text-text-muted">Select text for writing assistant</p>
+                                </div>
+                            </>
+                        )}
+                    </div>
 
                     <button
                         onClick={handleDelete}
@@ -429,6 +648,46 @@ export default function NoteEditor() {
                     </button>
                 </div>
             </header>
+
+            {/* AI Custom Prompt Bar */}
+            {showAIPrompt && aiConfigured && (
+                <div className="border-b border-purple-500/20 bg-purple-500/5 px-6 py-3 flex items-center gap-3 shrink-0">
+                    <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                    <input
+                        ref={aiPromptInputRef}
+                        type="text"
+                        value={aiPromptText}
+                        onChange={(e) => setAiPromptText(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAIPromptSubmit();
+                            } else if (e.key === 'Escape') {
+                                setShowAIPrompt(false);
+                                setAiPromptText('');
+                            }
+                        }}
+                        placeholder="Ask AI anything… (uses note as context)"
+                        className="flex-1 bg-transparent border-none outline-none text-sm text-text-primary placeholder:text-text-muted"
+                        disabled={aiLoading === 'prompt'}
+                    />
+                    <button
+                        onClick={handleAIPromptSubmit}
+                        disabled={!aiPromptText.trim() || aiLoading === 'prompt'}
+                        className="p-1.5 rounded-md text-purple-400 hover:bg-purple-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Send prompt"
+                    >
+                        <Send className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={() => { setShowAIPrompt(false); setAiPromptText(''); }}
+                        className="p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                        title="Close"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
 
             {/* Content area */}
             <div className="flex-1 overflow-y-auto">
@@ -460,6 +719,30 @@ export default function NoteEditor() {
                                         </button>
                                     </span>
                                 ))}
+                                {/* AI suggested tags */}
+                                {suggestedTags.map(tag => (
+                                    <span
+                                        key={`suggest-${tag}`}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-dashed border-purple-500/30 bg-purple-500/10 text-purple-400"
+                                    >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        {tag}
+                                        <button
+                                            onClick={() => handleAcceptTag(tag)}
+                                            className="hover:opacity-60 transition-opacity ml-0.5 text-emerald-400"
+                                            title="Accept"
+                                        >
+                                            <CheckCheck className="w-2.5 h-2.5" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDismissTag(tag)}
+                                            className="hover:opacity-60 transition-opacity text-red-400"
+                                            title="Dismiss"
+                                        >
+                                            <X className="w-2.5 h-2.5" />
+                                        </button>
+                                    </span>
+                                ))}
                                 <input
                                     type="text"
                                     value={tagInput}
@@ -476,6 +759,7 @@ export default function NoteEditor() {
                                     value={body}
                                     onChange={handleBodyChange}
                                     onKeyDown={handleTextareaKeyDown}
+                                    onMouseUp={handleTextSelect}
                                     placeholder="Write in markdown… use [[Note Title]] to link notes"
                                     className="w-full min-h-[60vh] bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted resize-none font-mono text-sm leading-relaxed"
                                 />
@@ -486,7 +770,7 @@ export default function NoteEditor() {
                                         className="fixed z-50 w-64 bg-surface-overlay border border-border-subtle rounded-xl shadow-2xl overflow-hidden"
                                         style={{ top: wikiPickerPos.top, left: wikiPickerPos.left }}
                                     >
-                                        <p className="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-widest border-b border-border-subtle bg-surface-base/60">
+                                        <p className="px-3 py-1.5 text-[11px] font-semibold text-text-muted uppercase tracking-widest border-b border-border-subtle bg-surface-base/60">
                                             Link note
                                         </p>
                                         {wikiSuggestions.map((n, i) => (
@@ -498,11 +782,11 @@ export default function NoteEditor() {
                                                     i === wikiSelectedIdx ? 'bg-accent/10 text-accent' : 'text-text-primary hover:bg-surface-hover'
                                                 )}
                                             >
-                                                <span className="text-[10px] opacity-50">↗</span>
+                                                <span className="text-[11px] opacity-50">↗</span>
                                                 <span className="truncate">{n.title}</span>
                                             </button>
                                         ))}
-                                        <p className="px-3 py-1 text-[10px] text-text-muted">
+                                        <p className="px-3 py-1 text-[11px] text-text-muted">
                                             ↑↓ navigate · Enter select · Esc dismiss
                                         </p>
                                     </div>
@@ -527,9 +811,20 @@ export default function NoteEditor() {
                                     ))}
                                 </div>
                             )}
+                            <div ref={previewRef}>
+                                <MarkdownRenderer
+                                    content={preprocessWikiLinks(body, notes)}
+                                    onWikiLink={handleWikiLink}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Hidden preview — always renders markdown so PDF export captures mermaid diagrams */}
+                    {mode === 'edit' && (
+                        <div ref={previewRef} className="fixed -left-[9999px] w-[720px]" aria-hidden="true">
                             <MarkdownRenderer
                                 content={preprocessWikiLinks(body, notes)}
-                                onWikiLink={handleWikiLink}
                             />
                         </div>
                     )}
@@ -537,12 +832,12 @@ export default function NoteEditor() {
                     {/* Linked Cards */}
                     <div className="mt-16 pt-6 border-t border-border-subtle">
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
+                            <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">
                                 Linked Cards ({activeNote.linkedCards?.length ?? 0})
                             </h3>
                             <button
                                 onClick={() => setIsCardPickerOpen(true)}
-                                className="text-[10px] text-accent hover:text-accent/70 transition-colors"
+                                className="text-[11px] text-accent hover:text-accent/70 transition-colors"
                             >
                                 + Link card
                             </button>
@@ -550,7 +845,7 @@ export default function NoteEditor() {
 
                         {activeNote.linkedCards?.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
-                                {activeNote.linkedCards.map((card) => (
+                                {activeNote.linkedCards.filter(c => c?._id).map((card) => (
                                     <div
                                         key={card._id}
                                         className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised border border-border-subtle rounded-lg text-xs group"
@@ -565,7 +860,7 @@ export default function NoteEditor() {
                                             {card.title}
                                         </span>
                                         {card.boardId?.name && (
-                                            <span className="text-text-muted text-[9px] shrink-0">
+                                            <span className="text-text-muted text-[11px] shrink-0">
                                                 · {card.boardId.name}
                                             </span>
                                         )}
@@ -580,7 +875,7 @@ export default function NoteEditor() {
                                 ))}
                             </div>
                         ) : (
-                            <p className="text-[10px] text-text-muted italic">No cards linked yet</p>
+                            <p className="text-[11px] text-text-muted italic">No cards linked yet</p>
                         )}
                     </div>
                 </div>
@@ -590,6 +885,56 @@ export default function NoteEditor() {
                 isOpen={isCardPickerOpen}
                 onClose={() => setIsCardPickerOpen(false)}
                 onSelect={handleLinkCard}
+            />
+
+            {/* Writing Assistant floating menu */}
+            {showWritingMenu && writingSelection && aiConfigured && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowWritingMenu(false)} />
+                    <div
+                        className="fixed z-50 bg-surface-overlay border border-purple-500/20 rounded-xl shadow-2xl py-1 min-w-[160px]"
+                        style={{ top: writingMenuPos.top, left: writingMenuPos.left }}
+                    >
+                        <p className="px-3 py-1 text-[11px] font-semibold text-purple-400 uppercase tracking-widest">
+                            <Sparkles className="w-2.5 h-2.5 inline mr-1" />
+                            Writing AI
+                        </p>
+                        {[
+                            { action: 'expand', icon: <Expand className="w-3 h-3" />, label: 'Expand' },
+                            { action: 'rewrite', icon: <Wand2 className="w-3 h-3" />, label: 'Rewrite' },
+                            { action: 'fix', icon: <CheckCheck className="w-3 h-3" />, label: 'Fix Grammar' },
+                            { action: 'simplify', icon: <Type className="w-3 h-3" />, label: 'Simplify' },
+                            { action: 'shorten', icon: <Eraser className="w-3 h-3" />, label: 'Shorten' },
+                        ].map(({ action, icon, label }) => (
+                            <button
+                                key={action}
+                                onClick={() => handleWritingAction(action)}
+                                disabled={aiLoading}
+                                className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-purple-500/10 hover:text-purple-300 transition-colors flex items-center gap-2 disabled:opacity-30"
+                            >
+                                {icon} {label}
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
+
+            {/* AI loading overlay */}
+            {aiLoading && (
+                <div className="fixed bottom-6 right-6 z-50 bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-2.5 flex items-center gap-2 shadow-xl backdrop-blur-sm">
+                    <div className="w-3 h-3 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                    <span className="text-xs font-medium text-purple-400">
+                        {aiLoading === 'summary' ? 'Generating summary...' : aiLoading === 'tags' ? 'Suggesting tags...' : aiLoading === 'prompt' ? 'Processing prompt...' : 'AI is thinking...'}
+                    </span>
+                </div>
+            )}
+
+            {/* Note → Cards Modal */}
+            <NoteToCardsModal
+                isOpen={showNoteToCards}
+                onClose={() => setShowNoteToCards(false)}
+                noteTitle={title}
+                noteBody={body}
             />
         </div>
     );

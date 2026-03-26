@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const boardSchema = new mongoose.Schema(
     {
+        workspaceId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Workspace',
+            default: null,
+        },
         name: {
             type: String,
             required: [true, 'Board name is required'],

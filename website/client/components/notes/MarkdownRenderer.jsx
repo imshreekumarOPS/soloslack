@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MermaidBlock from './MermaidBlock';
 
 // Custom link renderer — intercepts wiki:// scheme for [[Note]] links
 function WikiAwareLink({ href, children, onWikiLink }) {
@@ -17,7 +18,7 @@ function WikiAwareLink({ href, children, onWikiLink }) {
                 onClick={() => onWikiLink?.(noteId)}
                 className="text-accent hover:underline inline-flex items-center gap-0.5 font-medium"
             >
-                <span className="text-[10px] opacity-70">↗</span>{children}
+                <span className="text-[11px] opacity-70">↗</span>{children}
             </button>
         );
     }
@@ -29,6 +30,21 @@ export default function MarkdownRenderer({ content, onWikiLink }) {
         a: ({ href, children }) => (
             <WikiAwareLink href={href} onWikiLink={onWikiLink}>{children}</WikiAwareLink>
         ),
+        code: ({ className, children, ...props }) => {
+            const match = /language-(\w+)/.exec(className || '');
+            if (match?.[1] === 'mermaid') {
+                return <MermaidBlock chart={String(children)} />;
+            }
+            return <code className={className} {...props}>{children}</code>;
+        },
+        pre: ({ children }) => {
+            // If the child is a MermaidBlock, don't wrap in <pre>
+            const child = children?.props ?? {};
+            if (/language-mermaid/.test(child.className || '')) {
+                return <>{children}</>;
+            }
+            return <pre>{children}</pre>;
+        },
     };
 
     return (

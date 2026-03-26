@@ -3,15 +3,28 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useNotes } from '@/context/NotesContext';
 import { useBoards } from '@/context/BoardsContext';
+import { useUndo } from '@/context/UndoContext';
 
 export default function useKeyboardShortcuts() {
     const router = useRouter();
     const { createNote } = useNotes();
     const { setIsCreateBoardModalOpen } = useBoards();
+    const { undoAction } = useUndo();
 
     useEffect(() => {
         const handleKeyDown = async (e) => {
-            // Check if Alt key is pressed along with N or B
+            // Ctrl/Cmd + Z — global undo
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                // Don't intercept undo inside text inputs / textareas / contenteditable
+                const tag = e.target?.tagName;
+                const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable;
+                if (!isEditable) {
+                    e.preventDefault();
+                    await undoAction();
+                }
+            }
+
+            // Alt + N — new note
             if (e.altKey) {
                 if (e.key.toLowerCase() === 'n') {
                     e.preventDefault();
@@ -26,5 +39,5 @@ export default function useKeyboardShortcuts() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [createNote, setIsCreateBoardModalOpen, router]);
+    }, [createNote, setIsCreateBoardModalOpen, router, undoAction]);
 }

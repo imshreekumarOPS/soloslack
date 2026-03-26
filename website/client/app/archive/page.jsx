@@ -88,6 +88,30 @@ export default function ArchivePage() {
         }
     };
 
+    const handleDeleteAllNotes = async () => {
+        if (archivedNotes.length === 0) return;
+        if (!confirm(`Permanently delete all ${archivedNotes.length} archived notes? This cannot be undone.`)) return;
+        setActionPending('all');
+        try {
+            await Promise.all(archivedNotes.map(n => archiveApi.permanentDeleteNote(n._id)));
+            setArchivedNotes([]);
+        } finally {
+            setActionPending(null);
+        }
+    };
+
+    const handleDeleteAllBoards = async () => {
+        if (archivedBoards.length === 0) return;
+        if (!confirm(`Permanently delete all ${archivedBoards.length} archived boards and their cards? This cannot be undone.`)) return;
+        setActionPending('all');
+        try {
+            await Promise.all(archivedBoards.map(b => archiveApi.permanentDeleteBoard(b._id)));
+            setArchivedBoards([]);
+        } finally {
+            setActionPending(null);
+        }
+    };
+
     const noteCount = archivedNotes.length;
     const boardCount = archivedBoards.length;
 
@@ -104,10 +128,22 @@ export default function ArchivePage() {
                 </div>
             </header>
 
-            {/* Tabs */}
-            <div className="flex gap-1 bg-surface-overlay border border-border-default rounded-lg p-1 w-fit">
-                <TabBtn active={tab === 'notes'} onClick={() => setTab('notes')} icon={<FileText className="w-3.5 h-3.5" />} label="Notes" count={noteCount} />
-                <TabBtn active={tab === 'boards'} onClick={() => setTab('boards')} icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="Boards" count={boardCount} />
+            {/* Tabs + Delete All */}
+            <div className="flex items-center justify-between">
+                <div className="flex gap-1 bg-surface-overlay border border-border-default rounded-lg p-1 w-fit">
+                    <TabBtn active={tab === 'notes'} onClick={() => setTab('notes')} icon={<FileText className="w-3.5 h-3.5" />} label="Notes" count={noteCount} />
+                    <TabBtn active={tab === 'boards'} onClick={() => setTab('boards')} icon={<LayoutDashboard className="w-3.5 h-3.5" />} label="Boards" count={boardCount} />
+                </div>
+                {((tab === 'notes' && noteCount > 0) || (tab === 'boards' && boardCount > 0)) && (
+                    <button
+                        onClick={tab === 'notes' ? handleDeleteAllNotes : handleDeleteAllBoards}
+                        disabled={actionPending === 'all'}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 transition-colors disabled:opacity-40"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {actionPending === 'all' ? 'Deleting...' : `Delete All ${tab === 'notes' ? 'Notes' : 'Boards'}`}
+                    </button>
+                )}
             </div>
 
             {/* Content */}

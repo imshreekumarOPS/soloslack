@@ -22,6 +22,7 @@ export const boardsApi = {
     create: (data) => request('/boards', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, d) => request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
     delete: (id) => request(`/boards/${id}`, { method: 'DELETE' }),
+    restore: (id) => request(`/boards/${id}/restore`, { method: 'PATCH' }),
     import: (data) => request('/boards/import', { method: 'POST', body: JSON.stringify(data) }),
     reorder: (boards) => request('/boards/reorder', { method: 'PATCH', body: JSON.stringify({ boards }) }),
 };

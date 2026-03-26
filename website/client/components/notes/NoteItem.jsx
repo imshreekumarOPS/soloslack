@@ -21,7 +21,7 @@ function getTagStyle(tag) {
     return { backgroundColor: c.bg, borderColor: c.border, color: c.color };
 }
 
-export default function NoteItem({ note, isActive, onClick }) {
+export default function NoteItem({ note, isActive, onClick, selectMode, isSelected }) {
     const cleanBody = stripMarkdown(note.body);
 
     return (
@@ -29,11 +29,26 @@ export default function NoteItem({ note, isActive, onClick }) {
             onClick={onClick}
             className={cn(
                 'p-3 border-b border-border-subtle cursor-pointer transition-colors hover:bg-surface-hover',
-                isActive && 'bg-accent-subtle border-l-2 border-accent hover:bg-accent-subtle'
+                isActive && 'bg-accent-subtle border-l-2 border-accent hover:bg-accent-subtle',
+                selectMode && isSelected && 'bg-accent/5 border-l-2 border-accent',
             )}
         >
             <div className="flex items-start gap-1.5 mb-1">
-                {note.isPinned && (
+                {selectMode && (
+                    <div className={cn(
+                        'w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors',
+                        isSelected
+                            ? 'bg-accent border-accent'
+                            : 'border-border-default bg-surface-overlay'
+                    )}>
+                        {isSelected && (
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        )}
+                    </div>
+                )}
+                {!selectMode && note.isPinned && (
                     <Pin className="w-3 h-3 text-accent shrink-0 mt-0.5" />
                 )}
                 <h4 className="text-sm font-medium text-text-primary truncate flex-1">
@@ -44,12 +59,12 @@ export default function NoteItem({ note, isActive, onClick }) {
                 {cleanBody || 'No content'}
             </p>
             <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] text-text-muted">{timeAgo(note.updatedAt)}</span>
+                <span className="text-[11px] text-text-muted">{timeAgo(note.updatedAt)}</span>
                 {note.tags?.slice(0, 3).map(tag => (
                     <span
                         key={tag}
                         style={getTagStyle(tag)}
-                        className="inline-block px-1.5 py-px rounded-full text-[9px] font-medium border leading-tight"
+                        className="inline-block px-1.5 py-px rounded-full text-[11px] font-medium border leading-tight"
                     >
                         {tag}
                     </span>

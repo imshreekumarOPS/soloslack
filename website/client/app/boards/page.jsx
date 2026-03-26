@@ -1,21 +1,34 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useBoards } from '@/context/BoardsContext';
+import { useWorkspaces } from '@/context/WorkspacesContext';
+import { useAI } from '@/context/AIContext';
 import BoardCard from '@/components/kanban/BoardCard';
 import CreateBoardModal from '@/components/kanban/CreateBoardModal';
+import TemplateGeneratorModal from '@/components/ai/TemplateGeneratorModal';
+import { Sparkles } from 'lucide-react';
 
 export default function BoardsPage() {
     const { boards, fetchBoards, createBoard, loading } = useBoards();
+    const { workspaces, activeWorkspaceId, setActiveWorkspaceId, fetchWorkspaces } = useWorkspaces();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const { isConfigured: aiConfigured } = useAI();
 
     useEffect(() => {
         fetchBoards();
-    }, [fetchBoards]);
+        fetchWorkspaces();
+    }, [fetchBoards, fetchWorkspaces]);
 
     const handleNewBoard = async (data) => {
         await createBoard(data);
     };
+
+    const displayedBoards = (activeWorkspaceId
+        ? boards.filter(b => b.workspaceId === activeWorkspaceId)
+        : boards
+    ).filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return (
         <div className="p-8 max-w-6xl mx-auto">
@@ -24,7 +37,19 @@ export default function BoardsPage() {
                     <h1 className="text-2xl font-bold text-text-primary">Your Boards</h1>
                     <p className="text-sm text-text-secondary">Manage your projects and tasks across multiple boards.</p>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
+                    {workspaces.length > 0 && (
+                        <select
+                            value={activeWorkspaceId ?? ''}
+                            onChange={(e) => setActiveWorkspaceId(e.target.value || null)}
+                            className="bg-surface-raised border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                        >
+                            <option value="">All Workspaces</option>
+                            {workspaces.map(ws => (
+                                <option key={ws._id} value={ws._id}>{ws.name}</option>
+                            ))}
+                        </select>
+                    )}
                     <input
                         type="text"
                         placeholder="Search boards..."
@@ -32,6 +57,14 @@ export default function BoardsPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="bg-surface-raised border border-border-subtle rounded-md px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent w-64"
                     />
+                    {aiConfigured && (
+                        <button
+                            onClick={() => setIsTemplateModalOpen(true)}
+                            className="bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 px-4 py-2 rounded-md transition-colors text-sm font-semibold flex items-center gap-2 whitespace-nowrap"
+                        >
+                            <Sparkles className="w-4 h-4" /> AI Template
+                        </button>
+                    )}
                     <button
                         onClick={() => setIsModalOpen(true)}
                         className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded-md transition-colors text-sm font-semibold flex items-center gap-2 whitespace-nowrap"
@@ -46,6 +79,10 @@ export default function BoardsPage() {
                 onClose={() => setIsModalOpen(false)}
                 onCreate={handleNewBoard}
             />
+            <TemplateGeneratorModal
+                isOpen={isTemplateModalOpen}
+                onClose={() => setIsTemplateModalOpen(false)}
+            />
 
             {loading && boards.length === 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -53,10 +90,10 @@ export default function BoardsPage() {
                         <div key={i} className="h-40 bg-surface-raised/50 border border-border-subtle rounded-xl animate-pulse" />
                     ))}
                 </div>
-            ) : boards.length === 0 ? (
+            ) : displayedBoards.length === 0 ? (
                 <div className="bg-surface-raised border border-border-subtle rounded-xl p-12 text-center text-text-muted">
                     <span className="text-4xl mb-4 block">■</span>
-                    <p className="text-lg">No boards found</p>
+                    <p className="text-lg">{activeWorkspaceId ? 'No boards in this workspace' : 'No boards found'}</p>
                     <button
                         onClick={() => setIsModalOpen(true)}
                         className="mt-4 text-accent hover:underline text-sm"
@@ -66,11 +103,9 @@ export default function BoardsPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {boards
-                        .filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                        .map((board) => (
-                            <BoardCard key={board._id} board={board} />
-                        ))}
+                    {displayedBoards.map((board) => (
+                        <BoardCard key={board._id} board={board} />
+                    ))}
                 </div>
             )}
         </div>

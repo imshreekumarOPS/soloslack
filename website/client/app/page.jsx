@@ -3,10 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useNotes } from '@/context/NotesContext';
 import { useBoards } from '@/context/BoardsContext';
+import { useWorkspaces } from '@/context/WorkspacesContext';
 import BoardCard from '@/components/kanban/BoardCard';
 import { timeAgo, formatDueDate, getDueDateStatus } from '@/lib/utils/formatDate';
 import AnimatedIcon from '@/components/ui/AnimatedIcon';
 import { cardsApi } from '@/lib/api/cardsApi';
+import WeeklyDigest from '@/components/ai/WeeklyDigest';
+import AutoPrioritize from '@/components/ai/AutoPrioritize';
 import {
     FileText,
     LayoutDashboard,
@@ -42,15 +45,17 @@ function getFormattedDate() {
 export default function Dashboard() {
     const { notes, fetchNotes, setActiveNote } = useNotes();
     const { boards, fetchBoards, setIsCreateBoardModalOpen } = useBoards();
+    const { workspaces, fetchWorkspaces } = useWorkspaces();
     const [upcomingCards, setUpcomingCards] = useState([]);
 
     useEffect(() => {
         fetchNotes({ limit: 6 });
         fetchBoards();
+        fetchWorkspaces();
         cardsApi.getUpcoming()
             .then(res => setUpcomingCards(res.data))
             .catch(() => {});
-    }, [fetchNotes, fetchBoards]);
+    }, [fetchNotes, fetchBoards, fetchWorkspaces]);
 
     // Most recently updated item across notes + boards
     const lastActiveAgo = useMemo(() => {
@@ -128,7 +133,7 @@ export default function Dashboard() {
                     icon={<LayoutDashboard size={18} />}
                     iconClass="bg-gradient-to-br from-violet-500 to-purple-600"
                     label="Workspaces"
-                    value={notes.length + boards.length}
+                    value={workspaces.length}
                     borderHover="hover:border-violet-500/40"
                     cardClass="bg-gradient-to-br from-violet-500/10 to-violet-500/5 border border-violet-500/20"
                 />
@@ -219,6 +224,19 @@ export default function Dashboard() {
                     </div>
                 </section>
             )}
+
+            {/* ── AI Sections ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in-up stagger-5">
+                <WeeklyDigest notes={notes} boards={boards} upcomingCards={upcomingCards} />
+                <AutoPrioritize
+                    cards={upcomingCards}
+                    onUpdateCard={async (cardId, data) => {
+                        await cardsApi.update(cardId, data);
+                        const res = await cardsApi.getUpcoming();
+                        setUpcomingCards(res.data);
+                    }}
+                />
+            </div>
 
         </div>
     );

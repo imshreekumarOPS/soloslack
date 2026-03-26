@@ -5,7 +5,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import KanbanCard from './KanbanCard';
 import { cn } from '@/lib/utils/cn';
 
-export default function KanbanColumn({ column, cards, onCardClick, onAddCard, onUpdateColumn, onDeleteColumn }) {
+export default function KanbanColumn({ column, cards, onCardClick, onAddCard, onUpdateColumn, onDeleteColumn, selectMode, selectedCardIds, onToggleCardSelection, isMultiDragging }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [newName, setNewName] = useState(column.name);
@@ -18,6 +18,9 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
 
     const wipLimit = column.wipLimit ?? null;
     const isOverLimit = wipLimit !== null && cards.length > wipLimit;
+    const isAtLimit = wipLimit !== null && cards.length === wipLimit;
+    const isNearLimit = wipLimit !== null && !isOverLimit && !isAtLimit && cards.length >= wipLimit - 1 && wipLimit > 1;
+    const wipPercent = wipLimit !== null ? Math.min((cards.length / wipLimit) * 100, 100) : 0;
 
     const { setNodeRef } = useDroppable({ id: column._id });
 
@@ -98,17 +101,19 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                 </button>
                 <div className="flex-1 flex items-center justify-center">
                     <span
-                        className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider select-none"
+                        className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider select-none"
                         style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
                     >
                         {column.name}
                     </span>
                 </div>
                 <span className={cn(
-                    'text-[10px] px-1 py-0.5 rounded-full font-bold',
+                    'text-[11px] px-1 py-0.5 rounded-full font-bold',
                     isOverLimit
                         ? 'bg-red-500/20 text-red-400'
-                        : 'bg-surface-overlay text-text-muted'
+                        : isAtLimit
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-surface-overlay text-text-muted'
                 )}>
                     {wipLimit !== null ? `${cards.length}/${wipLimit}` : cards.length}
                 </span>
@@ -120,13 +125,15 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
     return (
         <div className={cn(
             'w-72 flex flex-col shrink-0 bg-surface-raised/40 rounded-xl border overflow-hidden max-h-full transition-colors',
-            isOverLimit ? 'border-red-500/60' : 'border-border-subtle'
+            isOverLimit ? 'border-red-500/60' : isAtLimit ? 'border-amber-500/60' : isNearLimit ? 'border-amber-400/30' : 'border-border-subtle'
         )}>
             <header className={cn(
                 'p-3 flex items-center justify-between border-b gap-2 transition-colors',
                 isOverLimit
                     ? 'border-red-500/40 bg-red-500/10'
-                    : 'border-border-subtle bg-surface-raised/60'
+                    : isAtLimit
+                        ? 'border-amber-500/40 bg-amber-500/10'
+                        : 'border-border-subtle bg-surface-raised/60'
             )}>
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                     {isEditing ? (
@@ -148,10 +155,14 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                                 {column.name}
                             </h3>
                             <span className={cn(
-                                'text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0',
+                                'text-[11px] px-1.5 py-0.5 rounded-full font-bold shrink-0',
                                 isOverLimit
                                     ? 'bg-red-500/20 text-red-400'
-                                    : 'bg-surface-overlay text-text-muted'
+                                    : isAtLimit
+                                        ? 'bg-amber-500/20 text-amber-400'
+                                        : isNearLimit
+                                            ? 'bg-amber-400/10 text-amber-300'
+                                            : 'bg-surface-overlay text-text-muted'
                             )}>
                                 {wipLimit !== null ? `${cards.length}/${wipLimit}` : cards.length}
                             </span>
@@ -190,7 +201,7 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                                 {/* WIP limit */}
                                 {isWipEditing ? (
                                     <div className="px-3 py-2 space-y-1.5">
-                                        <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wide">WIP Limit</span>
+                                        <span className="text-[11px] text-text-muted uppercase font-semibold tracking-wide">WIP Limit</span>
                                         <div className="flex items-center gap-1.5">
                                             <input
                                                 ref={wipInputRef}
@@ -215,7 +226,7 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                                         {wipLimit !== null && (
                                             <button
                                                 onClick={handleWipRemove}
-                                                className="text-[10px] text-text-muted hover:text-red-400 transition-colors"
+                                                className="text-[11px] text-text-muted hover:text-red-400 transition-colors"
                                             >
                                                 Remove limit
                                             </button>
@@ -244,6 +255,37 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                 </div>
             </header>
 
+            {/* WIP progress bar */}
+            {wipLimit !== null && (
+                <div className="px-3 pt-1.5">
+                    <div className="h-1 rounded-full bg-surface-overlay overflow-hidden">
+                        <div
+                            className={cn(
+                                'h-full rounded-full transition-all duration-300',
+                                isOverLimit
+                                    ? 'bg-red-500'
+                                    : isAtLimit
+                                        ? 'bg-amber-500'
+                                        : isNearLimit
+                                            ? 'bg-amber-400'
+                                            : 'bg-accent'
+                            )}
+                            style={{ width: `${wipPercent}%` }}
+                        />
+                    </div>
+                    {(isAtLimit || isOverLimit) && (
+                        <p className={cn(
+                            'text-[11px] mt-0.5 font-medium',
+                            isOverLimit ? 'text-red-400' : 'text-amber-400'
+                        )}>
+                            {isOverLimit
+                                ? `Over limit by ${cards.length - wipLimit}`
+                                : 'Column is full'}
+                        </p>
+                    )}
+                </div>
+            )}
+
             {/* Cards list — droppable target */}
             <div
                 ref={setNodeRef}
@@ -254,13 +296,17 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
             >
                 <SortableContext items={cards.map(c => c._id)} strategy={verticalListSortingStrategy}>
                     {cards.length === 0 ? (
-                        <p className="text-[10px] text-text-muted italic select-none">Drop cards here</p>
+                        <p className="text-[11px] text-text-muted italic select-none">Drop cards here</p>
                     ) : (
                         cards.map(card => (
                             <KanbanCard
                                 key={card._id}
                                 card={card}
-                                onClick={() => onCardClick(card)}
+                                onClick={() => selectMode ? onToggleCardSelection?.(card._id) : onCardClick?.(card)}
+                                selectMode={selectMode}
+                                isSelected={selectedCardIds?.has(card._id)}
+                                onToggleSelection={() => onToggleCardSelection?.(card._id)}
+                                isMultiDragging={isMultiDragging && selectedCardIds?.has(card._id)}
                             />
                         ))
                     )}
@@ -270,7 +316,14 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
             <footer className="p-2 border-t border-border-subtle bg-surface-raised/60">
                 <button
                     onClick={() => onAddCard(column._id)}
-                    className="w-full text-left p-2 text-xs text-text-muted hover:text-text-primary hover:bg-surface-hover rounded-md transition-all flex items-center gap-2"
+                    disabled={isAtLimit || isOverLimit}
+                    className={cn(
+                        'w-full text-left p-2 text-xs rounded-md transition-all flex items-center gap-2',
+                        isAtLimit || isOverLimit
+                            ? 'text-text-muted/40 cursor-not-allowed'
+                            : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
+                    )}
+                    title={isAtLimit || isOverLimit ? `WIP limit (${wipLimit}) reached` : undefined}
                 >
                     <Plus className="w-4 h-4" /> Add Card
                 </button>

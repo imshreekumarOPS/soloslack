@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const noteSchema = new mongoose.Schema(
     {
+        workspaceId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Workspace',
+            default: null,
+        },
         title: {
             type: String,
             default: '',

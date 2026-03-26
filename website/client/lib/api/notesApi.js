@@ -24,4 +24,9 @@ export const notesApi = {
     create: (data) => request('/notes', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, d) => request(`/notes/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
     delete: (id) => request(`/notes/${id}`, { method: 'DELETE' }),
+    restore: (id) => request(`/notes/${id}/restore`, { method: 'PATCH' }),
+    bulkArchive: (ids) => request('/notes/bulk-archive', { method: 'POST', body: JSON.stringify({ ids }) }),
+    bulkDelete: (ids) => request('/notes/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
+    bulkRestore: (ids) => request('/notes/bulk-restore', { method: 'POST', body: JSON.stringify({ ids }) }),
+    bulkTag: (ids, tag) => request('/notes/bulk-tag', { method: 'POST', body: JSON.stringify({ ids, tag }) }),
 };

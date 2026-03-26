@@ -2,6 +2,7 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { getLabelColor } from '@/lib/utils/labelColors';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -154,11 +155,18 @@ function DayCell({ date, isCurrentMonth, isToday, cards, onCardClick }) {
                         onClick={() => onCardClick(card)}
                         title={`${card.title}${card.columnName ? ` · ${card.columnName}` : ''}`}
                         className={cn(
-                            'w-full text-left text-[10px] font-medium px-1.5 py-0.5 rounded border truncate leading-tight transition-opacity hover:opacity-80',
+                            'w-full text-left text-[10px] font-medium px-1.5 py-0.5 rounded border truncate leading-tight transition-opacity hover:opacity-80 flex items-center gap-1',
                             PRIORITY_CHIP[card.priority] ?? 'bg-surface-overlay border-border-subtle text-text-secondary'
                         )}
                     >
-                        {card.title}
+                        {card.labels?.length > 0 && (
+                            <span className="flex items-center gap-0.5 shrink-0">
+                                {card.labels.slice(0, 3).map((label, i) => (
+                                    <span key={i} className={cn('w-1.5 h-1.5 rounded-full', getLabelColor(label.color).dot)} />
+                                ))}
+                            </span>
+                        )}
+                        <span className="truncate">{card.title}</span>
                     </button>
                 ))}
                 {overflow > 0 && (

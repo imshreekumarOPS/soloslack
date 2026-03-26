@@ -18,14 +18,22 @@ export default function KanbanBoard({
     columns,
     cardsByColumn,
     onMoveCard,
+    onBulkMoveCards,
     onAddCard,
     onAddColumn,
     onCardClick,
     onUpdateColumn,
     onDeleteColumn,
+    selectMode = false,
+    selectedCardIds = new Set(),
+    onToggleCardSelection,
 }) {
     const [activeId, setActiveId] = useState(null);
     const [localCardsByColumn, setLocalCardsByColumn] = useState(cardsByColumn);
+    const [multiDragTarget, setMultiDragTarget] = useState(null); // column id during multi-drag
+
+    // Is the current drag a multi-card drag?
+    const isMultiDrag = selectMode && activeId && selectedCardIds.size > 1 && selectedCardIds.has(activeId);
 
     // Sync local state when the server-driven prop changes (after a move completes, etc.)
     useEffect(() => {
@@ -47,17 +55,64 @@ export default function KanbanBoard({
 
     const handleDragStart = ({ active }) => {
         setActiveId(active.id);
+        setMultiDragTarget(null);
+    };
+
+    /** Check if a column would exceed WIP limit with N extra cards */
+    const wouldExceedWipLimit = (columnId, extraCount, excludeIds = new Set()) => {
+        const col = columns.find(c => c._id === columnId);
+        if (!col || col.wipLimit === null) return false;
+        const current = (localCardsByColumn[columnId] ?? []).filter(c => !excludeIds.has(c._id)).length;
+        return current + extraCount > col.wipLimit;
+    };
+
+    /** Check if a single card move would exceed WIP limit */
+    const isColumnFull = (columnId) => {
+        const col = columns.find(c => c._id === columnId);
+        if (!col || col.wipLimit === null) return false;
+        const cards = localCardsByColumn[columnId] ?? [];
+        return cards.length >= col.wipLimit;
     };
 
     const handleDragOver = ({ active, over }) => {
         if (!over) return;
 
+        // ── Multi-drag: only track which column we're over ──────────────
+        if (isMultiDrag) {
+            const overColumn = findColumn(over.id);
+            if (!overColumn) return;
+
+            // Check WIP limit for the batch
+            if (wouldExceedWipLimit(overColumn, selectedCardIds.size, selectedCardIds)) {
+                setMultiDragTarget(null);
+                return;
+            }
+
+            if (overColumn !== multiDragTarget) {
+                setMultiDragTarget(overColumn);
+
+                // Visual feedback: move all selected cards to target column
+                setLocalCardsByColumn(() => {
+                    const next = {};
+                    // Start from original server state, not accumulated local moves
+                    for (const colId of Object.keys(cardsByColumn)) {
+                        next[colId] = cardsByColumn[colId].filter(c => !selectedCardIds.has(c._id));
+                    }
+                    // Append all selected cards to target column
+                    const selectedCards = Object.values(cardsByColumn).flat().filter(c => selectedCardIds.has(c._id));
+                    next[overColumn] = [...next[overColumn], ...selectedCards];
+                    return next;
+                });
+            }
+            return;
+        }
+
+        // ── Single-card drag (existing logic) ───────────────────────────
         const activeColumn = findColumn(active.id);
         const overColumn = findColumn(over.id);
         if (!activeColumn || !overColumn) return;
 
         if (activeColumn === overColumn) {
-            // Within-column reorder: update local state for visual feedback
             const items = localCardsByColumn[activeColumn];
             const oldIndex = items.findIndex(c => c._id === active.id);
             const newIndex = items.findIndex(c => c._id === over.id);
@@ -70,7 +125,8 @@ export default function KanbanBoard({
             return;
         }
 
-        // Cross-column: move card into the destination column
+        if (isColumnFull(overColumn)) return;
+
         setLocalCardsByColumn(prev => {
             const activeItems = prev[activeColumn];
             const overItems = prev[overColumn];
@@ -79,7 +135,6 @@ export default function KanbanBoard({
 
             let insertAt;
             if (over.id in prev) {
-                // Dropped directly on the column container — append
                 insertAt = overItems.length;
             } else {
                 insertAt = overIndex >= 0 ? overIndex : overItems.length;
@@ -101,16 +156,32 @@ export default function KanbanBoard({
         setActiveId(null);
 
         if (!over) {
-            // Drag cancelled — revert to server state
             setLocalCardsByColumn(cardsByColumn);
+            setMultiDragTarget(null);
             return;
         }
 
+        // ── Multi-drag drop ─────────────────────────────────────────────
+        if (isMultiDrag && multiDragTarget) {
+            const ids = [...selectedCardIds];
+            setMultiDragTarget(null);
+            onBulkMoveCards?.(ids, multiDragTarget);
+            return;
+        }
+
+        // ── Single-card drop (existing logic) ───────────────────────────
         const activeColumn = findColumn(active.id);
         const overColumn = findColumn(over.id);
         if (!activeColumn || !overColumn) return;
 
-        // localCardsByColumn is already in the correct visual order (updated by handleDragOver)
+        const sourceColumn = Object.keys(cardsByColumn).find(key =>
+            cardsByColumn[key].some(card => card._id === active.id)
+        );
+        if (sourceColumn !== overColumn && isColumnFull(overColumn)) {
+            setLocalCardsByColumn(cardsByColumn);
+            return;
+        }
+
         const destCards = localCardsByColumn[overColumn];
         const newOrder = destCards.findIndex(c => c._id === active.id);
 
@@ -122,6 +193,7 @@ export default function KanbanBoard({
 
     const handleDragCancel = () => {
         setActiveId(null);
+        setMultiDragTarget(null);
         setLocalCardsByColumn(cardsByColumn);
     };
 
@@ -148,6 +220,10 @@ export default function KanbanBoard({
                         onAddCard={onAddCard}
                         onUpdateColumn={onUpdateColumn}
                         onDeleteColumn={onDeleteColumn}
+                        selectMode={selectMode}
+                        selectedCardIds={selectedCardIds}
+                        onToggleCardSelection={onToggleCardSelection}
+                        isMultiDragging={isMultiDrag}
                     />
                 ))}
 
@@ -166,7 +242,24 @@ export default function KanbanBoard({
                     }),
                 }}
             >
-                {activeCard ? <KanbanCard card={activeCard} isOverlay /> : null}
+                {activeCard ? (
+                    isMultiDrag ? (
+                        <div className="relative">
+                            {/* Stacked cards behind */}
+                            <div className="absolute top-1.5 left-1.5 w-full h-full bg-surface-overlay/60 border border-border-subtle rounded-lg" />
+                            <div className="absolute top-0.5 left-0.5 w-full h-full bg-surface-overlay/80 border border-border-subtle rounded-lg" />
+                            {/* Top card */}
+                            <div className="relative">
+                                <KanbanCard card={activeCard} isOverlay />
+                                <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center shadow-lg">
+                                    {selectedCardIds.size}
+                                </span>
+                            </div>
+                        </div>
+                    ) : (
+                        <KanbanCard card={activeCard} isOverlay />
+                    )
+                ) : null}
             </DragOverlay>
         </DndContext>
     );

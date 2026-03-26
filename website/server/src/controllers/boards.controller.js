@@ -1,12 +1,18 @@
 const Board = require('../models/Board');
 const Column = require('../models/Column');
 const Card = require('../models/Card');
+const Comment = require('../models/Comment');
+const Note = require('../models/Note');
 
 // @desc    Get all boards
 // @route   GET /api/boards
 exports.getBoards = async (req, res, next) => {
     try {
-        const boards = await Board.find({ isArchived: false }).sort({ order: 1, isPinned: -1, updatedAt: -1 }).lean();
+        const query = { isArchived: false };
+        if (req.query.workspaceId) {
+            query.workspaceId = req.query.workspaceId === 'none' ? null : req.query.workspaceId;
+        }
+        const boards = await Board.find(query).sort({ order: 1, isPinned: -1, updatedAt: -1 }).lean();
         res.status(200).json({
             success: true,
             count: boards.length,
@@ -54,9 +60,27 @@ exports.getBoardFull = async (req, res, next) => {
             Card.find({ boardId: board._id, isArchived: false }).sort({ order: 1 }).lean(),
         ]);
 
+        // Get comment counts for all cards in one aggregation
+        const cardIds = cards.map(c => c._id);
+        const commentCounts = cardIds.length > 0
+            ? await Comment.aggregate([
+                { $match: { cardId: { $in: cardIds } } },
+                { $group: { _id: '$cardId', count: { $sum: 1 } } },
+            ])
+            : [];
+
+        const commentCountMap = Object.fromEntries(
+            commentCounts.map(c => [c._id.toString(), c.count])
+        );
+
+        const cardsWithCounts = cards.map(c => ({
+            ...c,
+            commentCount: commentCountMap[c._id.toString()] ?? 0,
+        }));
+
         const columnsWithCards = columns.map(col => ({
             ...col,
-            cards: cards.filter(c => c.columnId.toString() === col._id.toString()),
+            cards: cardsWithCounts.filter(c => c.columnId.toString() === col._id.toString()),
         }));
 
         res.status(200).json({
@@ -76,14 +100,14 @@ exports.getBoardFull = async (req, res, next) => {
 // @route   POST /api/boards
 exports.createBoard = async (req, res, next) => {
     try {
-        const { name, description, columns: templateColumns } = req.body;
+        const { name, description, columns: templateColumns, workspaceId } = req.body;
         if (!name) {
             const error = new Error('Board name is required');
             error.statusCode = 400;
             throw error;
         }
 
-        const board = await Board.create({ name, description });
+        const board = await Board.create({ name, description, workspaceId: workspaceId || null });
 
         // Use provided template columns or fall back to defaults
         const colNames = (Array.isArray(templateColumns) && templateColumns.length > 0)
@@ -134,7 +158,7 @@ exports.updateBoard = async (req, res, next) => {
     }
 };
 
-// @desc    Archive (soft-delete) board
+// @desc    Archive (soft-delete) board — also archives its cards
 // @route   DELETE /api/boards/:id
 exports.deleteBoard = async (req, res, next) => {
     try {
@@ -148,13 +172,20 @@ exports.deleteBoard = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+
+        // Archive all cards in this board
+        await Card.updateMany(
+            { boardId: req.params.id },
+            { $set: { isArchived: true } }
+        );
+
         res.status(204).send();
     } catch (error) {
         next(error);
     }
 };
 
-// @desc    Restore board from archive
+// @desc    Restore board from archive — also restores its cards
 // @route   PATCH /api/boards/:id/restore
 exports.restoreBoard = async (req, res, next) => {
     try {
@@ -168,13 +199,20 @@ exports.restoreBoard = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+
+        // Restore all cards in this board
+        await Card.updateMany(
+            { boardId: req.params.id },
+            { $set: { isArchived: false } }
+        );
+
         res.status(200).json({ success: true, data: board });
     } catch (error) {
         next(error);
     }
 };
 
-// @desc    Permanently delete board
+// @desc    Permanently delete board — also cleans up note links
 // @route   DELETE /api/boards/:id/permanent
 exports.permanentDeleteBoard = async (req, res, next) => {
     try {
@@ -185,7 +223,18 @@ exports.permanentDeleteBoard = async (req, res, next) => {
             error.statusCode = 404;
             throw error;
         }
+        const cardIds = await Card.find({ boardId }).distinct('_id');
+
+        // Unlink cards from notes before deleting
+        if (cardIds.length > 0) {
+            await Note.updateMany(
+                { linkedCards: { $in: cardIds } },
+                { $pull: { linkedCards: { $in: cardIds } } }
+            );
+        }
+
         await Promise.all([
+            Comment.deleteMany({ cardId: { $in: cardIds } }),
             Card.deleteMany({ boardId }),
             Column.deleteMany({ boardId }),
             Board.findByIdAndDelete(boardId),

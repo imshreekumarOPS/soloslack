@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayoutTemplate, Bug, Zap, FileText, Map, Users } from 'lucide-react';
 import Modal from '../ui/Modal';
+import { useWorkspaces } from '@/context/WorkspacesContext';
 import { cn } from '@/lib/utils/cn';
 
 // ── Template definitions ──────────────────────────────────────────
@@ -66,11 +67,16 @@ const TEMPLATES = [
 // ── Component ─────────────────────────────────────────────────────
 
 export default function CreateBoardModal({ isOpen, onClose, onCreate }) {
+    const { workspaces, activeWorkspaceId, fetchWorkspaces } = useWorkspaces();
     const [selectedId, setSelectedId] = useState('blank');
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
+    const [workspaceId, setWorkspaceId] = useState(activeWorkspaceId ?? '');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => { fetchWorkspaces(); }, [fetchWorkspaces]);
+    useEffect(() => { setWorkspaceId(activeWorkspaceId ?? ''); }, [activeWorkspaceId]);
 
     const selectedTemplate = TEMPLATES.find(t => t.id === selectedId);
 
@@ -97,11 +103,13 @@ export default function CreateBoardModal({ isOpen, onClose, onCreate }) {
                 name: name.trim(),
                 description: description.trim(),
                 columns: selectedTemplate.columns,
+                workspaceId: workspaceId || undefined,
             });
             // Reset
             setSelectedId('blank');
             setName('');
             setDescription('');
+            setWorkspaceId(activeWorkspaceId ?? '');
             onClose();
         } catch (err) {
             setError(err.message || 'Failed to create board');
@@ -114,6 +122,7 @@ export default function CreateBoardModal({ isOpen, onClose, onCreate }) {
         setSelectedId('blank');
         setName('');
         setDescription('');
+        setWorkspaceId(activeWorkspaceId ?? '');
         setError('');
         onClose();
     };
@@ -221,6 +230,25 @@ export default function CreateBoardModal({ isOpen, onClose, onCreate }) {
                         className="w-full bg-surface-overlay border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent min-h-[72px] resize-none transition-colors"
                     />
                 </div>
+
+                {/* ── Workspace ── */}
+                {workspaces.length > 0 && (
+                    <div>
+                        <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                            Workspace
+                        </label>
+                        <select
+                            value={workspaceId}
+                            onChange={(e) => setWorkspaceId(e.target.value)}
+                            className="w-full bg-surface-overlay border border-border-default rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent transition-colors"
+                        >
+                            <option value="">None (Uncategorized)</option>
+                            {workspaces.map(ws => (
+                                <option key={ws._id} value={ws._id}>{ws.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 {/* ── Actions ── */}
                 <div className="flex items-center justify-end gap-3 pt-1">

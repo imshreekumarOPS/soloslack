@@ -1,10 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Sun, Moon, Trash2, Search, Archive, GripVertical } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Sun, Moon, Trash2, Search, Archive, GripVertical, FolderOpen, Plus, X, Pencil, MoreHorizontal, BarChart3 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useBoards } from '@/context/BoardsContext';
+import { useWorkspaces } from '@/context/WorkspacesContext';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils/cn';
 import CreateBoardModal from '@/components/kanban/CreateBoardModal';
@@ -17,6 +18,19 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities';
 
 const BOARD_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#ef4444', '#f97316'];
+
+const WORKSPACE_COLOR_MAP = {
+    indigo:  { dot: '#6366f1', bg: 'rgba(99,102,241,0.15)',  active: 'rgba(99,102,241,0.25)' },
+    emerald: { dot: '#10b981', bg: 'rgba(16,185,129,0.15)',  active: 'rgba(16,185,129,0.25)' },
+    violet:  { dot: '#8b5cf6', bg: 'rgba(139,92,246,0.15)',  active: 'rgba(139,92,246,0.25)' },
+    amber:   { dot: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  active: 'rgba(245,158,11,0.25)' },
+    rose:    { dot: '#f43f5e', bg: 'rgba(244,63,94,0.15)',   active: 'rgba(244,63,94,0.25)' },
+    cyan:    { dot: '#06b6d4', bg: 'rgba(6,182,212,0.15)',   active: 'rgba(6,182,212,0.25)' },
+    orange:  { dot: '#f97316', bg: 'rgba(249,115,22,0.15)',  active: 'rgba(249,115,22,0.25)' },
+    teal:    { dot: '#14b8a6', bg: 'rgba(20,184,166,0.15)',  active: 'rgba(20,184,166,0.25)' },
+};
+
+const WS_COLORS = Object.keys(WORKSPACE_COLOR_MAP);
 
 function getBoardColor(index) {
     return BOARD_COLORS[index % BOARD_COLORS.length];
@@ -69,8 +83,10 @@ function SortableBoardItem({ board, index, pathname, onDeleteClick }) {
 export default function Sidebar() {
     const pathname = usePathname();
     const { boards, fetchBoards, createBoard, setIsCreateBoardModalOpen, reorderBoards } = useBoards();
+    const { workspaces, activeWorkspaceId, setActiveWorkspaceId, fetchWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace } = useWorkspaces();
     const { theme, updateTheme, focusMode } = useSettings();
     const [boardsExpanded, setBoardsExpanded] = useState(true);
+    const [workspacesExpanded, setWorkspacesExpanded] = useState(true);
     const [hoveredItem, setHoveredItem] = useState(null);
     const [settingsHovered, setSettingsHovered] = useState(false);
     const [boardSearch, setBoardSearch] = useState('');
@@ -78,6 +94,16 @@ export default function Sidebar() {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+    // Workspace inline create/edit state
+    const [isCreatingWs, setIsCreatingWs] = useState(false);
+    const [newWsName, setNewWsName] = useState('');
+    const [newWsColor, setNewWsColor] = useState('indigo');
+    const [editingWsId, setEditingWsId] = useState(null);
+    const [editingWsName, setEditingWsName] = useState('');
+    const [wsMenuId, setWsMenuId] = useState(null);
+    const wsMenuRef = useRef(null);
+    const wsInputRef = useRef(null);
 
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -90,7 +116,45 @@ export default function Sidebar() {
 
     useEffect(() => {
         fetchBoards();
-    }, [fetchBoards]);
+        fetchWorkspaces();
+    }, [fetchBoards, fetchWorkspaces]);
+
+    // Close workspace menu on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (wsMenuRef.current && !wsMenuRef.current.contains(e.target)) setWsMenuId(null);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    // Filter boards by active workspace
+    const filteredBoards = activeWorkspaceId
+        ? boards.filter(b => b.workspaceId === activeWorkspaceId)
+        : boards;
+
+    const handleCreateWs = async () => {
+        const name = newWsName.trim();
+        if (!name) return;
+        await createWorkspace({ name, color: newWsColor });
+        setNewWsName('');
+        setNewWsColor('indigo');
+        setIsCreatingWs(false);
+    };
+
+    const handleRenameWs = async (id) => {
+        const name = editingWsName.trim();
+        if (!name) { setEditingWsId(null); return; }
+        await updateWorkspace(id, { name });
+        setEditingWsId(null);
+        setEditingWsName('');
+    };
+
+    const handleDeleteWs = async (id) => {
+        if (!confirm('Delete this workspace? Boards and notes inside will become uncategorized.')) return;
+        await deleteWorkspace(id);
+        setWsMenuId(null);
+    };
 
     // Global keyboard shortcuts
     useEffect(() => {
@@ -160,6 +224,11 @@ export default function Sidebar() {
             path: '/archive',
             type: 'archive'
         },
+        {
+            name: 'AI Analytics',
+            path: '/analytics',
+            type: 'analytics'
+        },
     ];
 
     const isActive = (path) => {
@@ -189,7 +258,7 @@ export default function Sidebar() {
                 </div>
                 <div>
                     <h1 className="text-base font-bold text-text-primary tracking-tight">SoloSlack</h1>
-                    <p className="text-[10px] text-text-muted font-medium uppercase tracking-widest leading-none">Notes + Kanban</p>
+                    <p className="text-[11px] text-text-muted font-medium uppercase tracking-widest leading-none">Notes + Kanban</p>
                 </div>
             </div>
 
@@ -204,7 +273,7 @@ export default function Sidebar() {
                 >
                     <Search className="w-3.5 h-3.5 shrink-0" />
                     <span className="flex-1 text-left text-xs">Search…</span>
-                    <kbd className="text-[10px] font-mono bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle leading-none">
+                    <kbd className="text-[11px] font-mono bg-surface-raised px-1.5 py-0.5 rounded border border-border-subtle leading-none">
                         ⌘K
                     </kbd>
                 </button>
@@ -212,7 +281,7 @@ export default function Sidebar() {
 
             {/* ===== Navigation ===== */}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                <p className="text-[10px] text-text-muted uppercase tracking-widest font-semibold px-3 mb-2">
+                <p className="text-[11px] text-text-muted uppercase tracking-widest font-semibold px-3 mb-2">
                     Navigation
                 </p>
                 {navItems.map((item) => (
@@ -234,6 +303,8 @@ export default function Sidebar() {
                         )}>
                             {item.type === 'archive' ? (
                                 <Archive className="w-5 h-5" />
+                            ) : item.type === 'analytics' ? (
+                                <BarChart3 className="w-5 h-5" />
                             ) : (
                                 <AnimatedIcon
                                     type={item.type}
@@ -249,18 +320,198 @@ export default function Sidebar() {
                     </Link>
                 ))}
 
-                {/* ===== Boards Section ===== */}
+                {/* ===== Workspaces Section ===== */}
                 <div className="mt-6 pt-4">
+                    <button
+                        onClick={() => setWorkspacesExpanded(!workspacesExpanded)}
+                        className="w-full flex items-center justify-between px-3 mb-2 group"
+                    >
+                        <span className="text-[11px] text-text-muted uppercase tracking-widest font-semibold group-hover:text-text-secondary transition-colors">
+                            Workspaces
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="text-[11px] text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md font-mono">
+                                {workspaces.length}
+                            </span>
+                            <svg
+                                className={cn(
+                                    "w-3.5 h-3.5 text-text-muted transition-transform duration-200",
+                                    workspacesExpanded ? "rotate-0" : "-rotate-90"
+                                )}
+                                fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                            </svg>
+                        </span>
+                    </button>
+
+                    {workspacesExpanded && (
+                        <div className="space-y-0.5 animate-fade-in">
+                            {/* "All" item to clear workspace filter */}
+                            <button
+                                onClick={() => setActiveWorkspaceId(null)}
+                                className={cn(
+                                    'w-full flex items-center gap-2.5 pl-6 pr-3 py-1.5 text-xs rounded-lg transition-all duration-200',
+                                    activeWorkspaceId === null
+                                        ? 'bg-surface-hover text-text-primary font-medium'
+                                        : 'text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary'
+                                )}
+                            >
+                                <FolderOpen className="w-3.5 h-3.5 shrink-0 text-text-muted" />
+                                <span className="truncate">All Items</span>
+                            </button>
+
+                            {/* Workspace items */}
+                            {workspaces.map((ws) => {
+                                const c = WORKSPACE_COLOR_MAP[ws.color] ?? WORKSPACE_COLOR_MAP.indigo;
+                                const isActive = activeWorkspaceId === ws._id;
+
+                                return (
+                                    <div key={ws._id} className="relative group">
+                                        {editingWsId === ws._id ? (
+                                            <div className="px-3 py-1">
+                                                <input
+                                                    type="text"
+                                                    value={editingWsName}
+                                                    onChange={(e) => setEditingWsName(e.target.value)}
+                                                    onBlur={() => handleRenameWs(ws._id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleRenameWs(ws._id);
+                                                        if (e.key === 'Escape') setEditingWsId(null);
+                                                    }}
+                                                    className="w-full bg-surface-overlay text-xs font-medium text-text-primary px-2 py-1 rounded border border-accent outline-none"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => setActiveWorkspaceId(isActive ? null : ws._id)}
+                                                className={cn(
+                                                    'w-full flex items-center gap-2.5 pl-6 pr-8 py-1.5 text-xs rounded-lg transition-all duration-200',
+                                                    isActive
+                                                        ? 'font-medium text-text-primary'
+                                                        : 'text-text-secondary hover:bg-surface-hover/50 hover:text-text-primary'
+                                                )}
+                                                style={isActive ? { backgroundColor: c.active } : undefined}
+                                            >
+                                                <span
+                                                    className="w-2.5 h-2.5 rounded shrink-0"
+                                                    style={{ backgroundColor: c.dot }}
+                                                />
+                                                <span className="truncate flex-1 text-left">{ws.name}</span>
+                                                <span className="text-[11px] text-text-muted font-mono shrink-0">
+                                                    {(ws.boardCount ?? 0) + (ws.noteCount ?? 0)}
+                                                </span>
+                                            </button>
+                                        )}
+
+                                        {/* Context menu trigger */}
+                                        {editingWsId !== ws._id && (
+                                            <div className="absolute right-1 top-1/2 -translate-y-1/2" ref={wsMenuId === ws._id ? wsMenuRef : undefined}>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setWsMenuId(prev => prev === ws._id ? null : ws._id); }}
+                                                    className="p-1 rounded text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-all"
+                                                >
+                                                    <MoreHorizontal className="w-3.5 h-3.5" />
+                                                </button>
+                                                {wsMenuId === ws._id && (
+                                                    <div className="absolute right-0 top-full mt-1 w-36 bg-surface-overlay border border-border-subtle rounded-lg shadow-xl z-50 py-1">
+                                                        <button
+                                                            onClick={() => { setEditingWsId(ws._id); setEditingWsName(ws.name); setWsMenuId(null); }}
+                                                            className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover flex items-center gap-2"
+                                                        >
+                                                            <Pencil className="w-3 h-3" /> Rename
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteWs(ws._id)}
+                                                            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-400/10 flex items-center gap-2"
+                                                        >
+                                                            <Trash2 className="w-3 h-3" /> Delete
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {/* Create workspace inline */}
+                            {isCreatingWs ? (
+                                <div className="px-3 py-1.5 space-y-1.5">
+                                    <input
+                                        ref={wsInputRef}
+                                        type="text"
+                                        value={newWsName}
+                                        onChange={(e) => setNewWsName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleCreateWs();
+                                            if (e.key === 'Escape') setIsCreatingWs(false);
+                                        }}
+                                        placeholder="Workspace name"
+                                        className="w-full bg-surface-overlay border border-border-default rounded-md px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent"
+                                        autoFocus
+                                    />
+                                    <div className="flex items-center gap-1">
+                                        {WS_COLORS.map(key => (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                onClick={() => setNewWsColor(key)}
+                                                className={cn(
+                                                    'w-4 h-4 rounded transition-all',
+                                                    newWsColor === key ? 'ring-2 ring-offset-1 ring-offset-transparent scale-110' : 'opacity-50 hover:opacity-80'
+                                                )}
+                                                style={{
+                                                    backgroundColor: WORKSPACE_COLOR_MAP[key].dot,
+                                                    ...(newWsColor === key ? { ringColor: WORKSPACE_COLOR_MAP[key].dot } : {}),
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleCreateWs}
+                                            disabled={!newWsName.trim()}
+                                            className="px-2.5 py-1 rounded bg-accent/20 text-accent text-[11px] font-medium hover:bg-accent/30 disabled:opacity-30"
+                                        >
+                                            Create
+                                        </button>
+                                        <button
+                                            onClick={() => setIsCreatingWs(false)}
+                                            className="text-[11px] text-text-muted hover:text-text-primary"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setIsCreatingWs(true)}
+                                    className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-text-muted hover:text-accent hover:bg-accent/5 rounded-lg transition-all duration-200 group"
+                                >
+                                    <span className="w-4 h-4 rounded border border-dashed border-text-muted/40 group-hover:border-accent/60 flex items-center justify-center transition-colors">
+                                        <Plus className="w-2.5 h-2.5" />
+                                    </span>
+                                    New Workspace
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* ===== Boards Section ===== */}
+                <div className="mt-4 pt-3">
                     <button
                         onClick={() => setBoardsExpanded(!boardsExpanded)}
                         className="w-full flex items-center justify-between px-3 mb-2 group"
                     >
-                        <span className="text-[10px] text-text-muted uppercase tracking-widest font-semibold group-hover:text-text-secondary transition-colors">
-                            Boards
+                        <span className="text-[11px] text-text-muted uppercase tracking-widest font-semibold group-hover:text-text-secondary transition-colors">
+                            {activeWorkspaceId ? 'Boards in Workspace' : 'Boards'}
                         </span>
                         <span className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md font-mono">
-                                {boards.length}
+                            <span className="text-[11px] text-text-muted bg-surface-overlay px-1.5 py-0.5 rounded-md font-mono">
+                                {filteredBoards.length}
                             </span>
                             <svg
                                 className={cn(
@@ -290,10 +541,10 @@ export default function Sidebar() {
                             </div>
                             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                                 <SortableContext
-                                    items={boards.filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase())).map(b => b._id)}
+                                    items={filteredBoards.filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase())).map(b => b._id)}
                                     strategy={verticalListSortingStrategy}
                                 >
-                                    {boards
+                                    {filteredBoards
                                         .filter(b => b.name.toLowerCase().includes(boardSearch.toLowerCase()))
                                         .map((board, i) => (
                                             <SortableBoardItem

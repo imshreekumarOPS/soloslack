@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { FileText, Trash2, Eye, Edit3, Calendar, CheckSquare, Plus, X } from 'lucide-react';
+import { FileText, Trash2, Eye, Edit3, Calendar, CheckSquare, Plus, X, Tag, MessageSquare, Pencil, Send, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import Modal from '../ui/Modal';
 import Badge from '../ui/Badge';
@@ -8,12 +8,18 @@ import MarkdownRenderer from '../notes/MarkdownRenderer';
 import NotePicker from '../notes/NotePicker';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import { notesApi } from '@/lib/api/notesApi';
+import { cardsApi } from '@/lib/api/cardsApi';
 import { cn } from '@/lib/utils/cn';
 import { timeAgo, toInputDateValue } from '@/lib/utils/formatDate';
+import { LABEL_COLORS, getLabelColor } from '@/lib/utils/labelColors';
+import { useAI } from '@/context/AIContext';
+import { useUndo } from '@/context/UndoContext';
+import { cardDescriptionPrompt } from '@/lib/ai/prompts';
 
 const PRIORITIES = ['low', 'medium', 'high'];
 
 export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete }) {
+    const { showToast } = useUndo();
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState('medium');
@@ -25,7 +31,21 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
     const [linkedNoteLoading, setLinkedNoteLoading] = useState(false);
     const [checklist, setChecklist] = useState([]);
     const [newItemText, setNewItemText] = useState('');
+    const [labels, setLabels] = useState([]);
+    const [isLabelAdding, setIsLabelAdding] = useState(false);
+    const [newLabelText, setNewLabelText] = useState('');
+    const [newLabelColor, setNewLabelColor] = useState('blue');
+    const [comments, setComments] = useState([]);
+    const [commentsLoading, setCommentsLoading] = useState(false);
+    const [newComment, setNewComment] = useState('');
+    const [editingCommentId, setEditingCommentId] = useState(null);
+    const [editingCommentBody, setEditingCommentBody] = useState('');
+    const [aiGenerating, setAiGenerating] = useState(false);
     const newItemRef = useRef(null);
+    const labelInputRef = useRef(null);
+    const commentInputRef = useRef(null);
+
+    const { askAI, isConfigured: aiConfigured } = useAI();
 
     // Stable ref for onUpdate so it doesn't appear in debounce effect deps
     const onUpdateRef = useRef(onUpdate);
@@ -39,10 +59,29 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
         setPriority(card.priority ?? 'medium');
         setDueDate(toInputDateValue(card.dueDate));
         setChecklist(card.checklist ?? []);
+        setLabels(card.labels ?? []);
         setNewItemText('');
+        setIsLabelAdding(false);
+        setNewLabelText('');
+        setNewLabelColor('blue');
         setMode('edit');
         setSaveStatus('idle');
     }, [card?._id]); // Only re-run when the card ID changes, not on every card update
+
+    // Fetch comments when a card is opened
+    useEffect(() => {
+        if (!card?._id || !isOpen) {
+            setComments([]);
+            return;
+        }
+        let cancelled = false;
+        setCommentsLoading(true);
+        cardsApi.getComments(card._id)
+            .then(res => { if (!cancelled) setComments(res.data); })
+            .catch(() => { if (!cancelled) setComments([]); })
+            .finally(() => { if (!cancelled) setCommentsLoading(false); });
+        return () => { cancelled = true; };
+    }, [card?._id, isOpen]);
 
     // Fetch linked note title when linkedNoteId changes
     useEffect(() => {
@@ -135,6 +174,80 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
         if (e.key === 'Enter') { e.preventDefault(); handleChecklistAdd(); }
     };
 
+    const handleLabelAdd = () => {
+        const text = newLabelText.trim();
+        if (!text || labels.length >= 6) return;
+        const updated = [...labels, { text, color: newLabelColor }];
+        setLabels(updated);
+        setNewLabelText('');
+        setNewLabelColor('blue');
+        setIsLabelAdding(false);
+        onUpdate(card._id, { labels: updated });
+    };
+
+    const handleLabelRemove = (index) => {
+        const updated = labels.filter((_, i) => i !== index);
+        setLabels(updated);
+        onUpdate(card._id, { labels: updated });
+    };
+
+    const handleLabelKeyDown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); handleLabelAdd(); }
+        if (e.key === 'Escape') { setIsLabelAdding(false); }
+    };
+
+    const handleCommentAdd = async () => {
+        const body = newComment.trim();
+        if (!body || !card) return;
+        setNewComment('');
+        try {
+            const res = await cardsApi.createComment(card._id, body);
+            setComments(prev => [res.data, ...prev]);
+        } catch {
+            setNewComment(body); // restore on failure
+        }
+    };
+
+    const handleCommentUpdate = async (commentId) => {
+        const body = editingCommentBody.trim();
+        if (!body || !card) return;
+        try {
+            const res = await cardsApi.updateComment(card._id, commentId, body);
+            setComments(prev => prev.map(c => c._id === commentId ? res.data : c));
+            setEditingCommentId(null);
+            setEditingCommentBody('');
+        } catch { /* keep editing state on failure */ }
+    };
+
+    const handleCommentDelete = async (commentId) => {
+        if (!card) return;
+        setComments(prev => prev.filter(c => c._id !== commentId));
+        try {
+            await cardsApi.deleteComment(card._id, commentId);
+        } catch {
+            // Re-fetch on failure
+            cardsApi.getComments(card._id).then(res => setComments(res.data)).catch(() => {});
+        }
+    };
+
+    const handleGenerateDescription = async () => {
+        if (!title.trim() || aiGenerating) return;
+        setAiGenerating(true);
+        try {
+            const result = await askAI(cardDescriptionPrompt(title), { maxTokens: 1024 });
+            const parsed = JSON.parse(result.text.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
+            const newDesc = parsed.description || '';
+            const newChecklist = (parsed.checklist || []).map(text => ({ text: String(text).slice(0, 200), completed: false }));
+            setDescription(newDesc);
+            setChecklist(newChecklist);
+            onUpdate(card._id, { description: newDesc, checklist: newChecklist });
+        } catch (err) {
+            showToast({ label: 'AI generation failed: ' + err.message, type: 'error' });
+        } finally {
+            setAiGenerating(false);
+        }
+    };
+
     const handleDelete = () => {
         if (confirm('Delete this card? This cannot be undone.')) {
             onDelete(card._id);
@@ -209,10 +322,119 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
                     />
                 </section>
 
+                {/* Labels */}
+                <section>
+                    <label className="block text-xs font-semibold text-text-muted uppercase mb-2 flex items-center gap-1.5">
+                        <Tag className="w-3 h-3" />
+                        Labels
+                        {labels.length > 0 && (
+                            <span className="text-text-muted font-normal">{labels.length}/6</span>
+                        )}
+                    </label>
+
+                    {/* Existing labels */}
+                    {labels.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                            {labels.map((label, i) => {
+                                const c = getLabelColor(label.color);
+                                return (
+                                    <span
+                                        key={i}
+                                        className={cn(
+                                            'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full',
+                                            c.bg, c.text
+                                        )}
+                                    >
+                                        {label.text}
+                                        <button
+                                            onClick={() => handleLabelRemove(i)}
+                                            className="hover:opacity-70 transition-opacity"
+                                        >
+                                            <X className="w-2.5 h-2.5" />
+                                        </button>
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Add label form */}
+                    {isLabelAdding ? (
+                        <div className="space-y-2 p-2 bg-surface-overlay/50 rounded-md border border-border-subtle">
+                            <input
+                                ref={labelInputRef}
+                                type="text"
+                                value={newLabelText}
+                                onChange={(e) => setNewLabelText(e.target.value)}
+                                onKeyDown={handleLabelKeyDown}
+                                placeholder="Label name"
+                                maxLength={30}
+                                className="w-full bg-surface-overlay border border-border-default rounded-md px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+                                autoFocus
+                            />
+                            <div className="flex items-center gap-1.5">
+                                {LABEL_COLORS.map((c) => (
+                                    <button
+                                        key={c.key}
+                                        type="button"
+                                        onClick={() => setNewLabelColor(c.key)}
+                                        className={cn(
+                                            'w-5 h-5 rounded-full transition-all',
+                                            c.dot,
+                                            newLabelColor === c.key
+                                                ? 'ring-2 ring-offset-1 ring-offset-transparent ' + c.ring + ' scale-110'
+                                                : 'opacity-50 hover:opacity-80'
+                                        )}
+                                        title={c.key}
+                                    />
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleLabelAdd}
+                                    disabled={!newLabelText.trim()}
+                                    className="px-3 py-1 rounded-md bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-colors disabled:opacity-30"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    onClick={() => setIsLabelAdding(false)}
+                                    className="text-xs text-text-muted hover:text-text-primary transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        labels.length < 6 && (
+                            <button
+                                onClick={() => setIsLabelAdding(true)}
+                                className="text-xs text-text-muted hover:text-accent transition-colors flex items-center gap-1"
+                            >
+                                <Plus className="w-3 h-3" /> Add label
+                            </button>
+                        )
+                    )}
+                </section>
+
                 {/* Description */}
                 <section>
                     <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-semibold text-text-muted uppercase">Description</label>
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-text-muted uppercase">Description</label>
+                            {aiConfigured && (
+                                <button
+                                    type="button"
+                                    onClick={handleGenerateDescription}
+                                    disabled={aiGenerating || !title.trim()}
+                                    title="Generate description with AI"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors disabled:opacity-30"
+                                >
+                                    <Sparkles className={cn('w-3 h-3', aiGenerating && 'animate-spin')} />
+                                    {aiGenerating ? 'Generating...' : 'AI Generate'}
+                                </button>
+                            )}
+                        </div>
                         <div className="flex bg-surface-overlay rounded-md p-0.5 border border-border-default">
                             <button
                                 onClick={() => setMode('edit')}
@@ -324,6 +546,115 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
                             <Plus className="w-3.5 h-3.5" />
                         </button>
                     </div>
+                </section>
+
+                {/* Comments */}
+                <section>
+                    <label className="block text-xs font-semibold text-text-muted uppercase mb-2 flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Comments
+                        {comments.length > 0 && (
+                            <span className="text-text-muted font-normal">{comments.length}</span>
+                        )}
+                    </label>
+
+                    {/* New comment input */}
+                    <div className="flex items-start gap-2 mb-3">
+                        <textarea
+                            ref={commentInputRef}
+                            value={newComment}
+                            onChange={(e) => setNewComment(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommentAdd(); }
+                            }}
+                            placeholder="Add a comment…"
+                            rows={2}
+                            className="flex-1 bg-surface-overlay border border-border-default rounded-md px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-none"
+                        />
+                        <button
+                            onClick={handleCommentAdd}
+                            disabled={!newComment.trim()}
+                            className="p-2 rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-30 shrink-0 mt-0.5"
+                            title="Post comment"
+                        >
+                            <Send className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    {/* Comments list */}
+                    {commentsLoading ? (
+                        <p className="text-[10px] text-text-muted italic">Loading comments…</p>
+                    ) : comments.length === 0 ? (
+                        <p className="text-[10px] text-text-muted italic">No comments yet</p>
+                    ) : (
+                        <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                            {comments.map(comment => (
+                                <div
+                                    key={comment._id}
+                                    className="group bg-surface-overlay/50 border border-border-subtle rounded-md px-3 py-2"
+                                >
+                                    {editingCommentId === comment._id ? (
+                                        <div className="space-y-1.5">
+                                            <textarea
+                                                value={editingCommentBody}
+                                                onChange={(e) => setEditingCommentBody(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommentUpdate(comment._id); }
+                                                    if (e.key === 'Escape') { setEditingCommentId(null); }
+                                                }}
+                                                rows={2}
+                                                className="w-full bg-surface-overlay border border-accent rounded-md px-2 py-1.5 text-xs text-text-primary focus:outline-none resize-none"
+                                                autoFocus
+                                            />
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleCommentUpdate(comment._id)}
+                                                    disabled={!editingCommentBody.trim()}
+                                                    className="px-2.5 py-1 rounded-md bg-accent/20 text-accent text-[11px] font-medium hover:bg-accent/30 transition-colors disabled:opacity-30"
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    onClick={() => setEditingCommentId(null)}
+                                                    className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-xs text-text-primary whitespace-pre-wrap leading-relaxed">
+                                                {comment.body}
+                                            </p>
+                                            <div className="flex items-center justify-between mt-1.5">
+                                                <span className="text-[10px] text-text-muted">
+                                                    {timeAgo(comment.createdAt)}
+                                                    {comment.updatedAt !== comment.createdAt && ' (edited)'}
+                                                </span>
+                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => { setEditingCommentId(comment._id); setEditingCommentBody(comment.body); }}
+                                                        className="text-text-muted hover:text-accent transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil className="w-3 h-3" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleCommentDelete(comment._id)}
+                                                        className="text-text-muted hover:text-red-400 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </section>
 
                 {/* Linked Note */}

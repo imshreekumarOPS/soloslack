@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, CheckSquare, X, Archive, Trash2, Tag } from 'lucide-react';
 import { useNotes } from '@/context/NotesContext';
+import { useWorkspaces } from '@/context/WorkspacesContext';
 import NoteSearch from './NoteSearch';
 import NoteItem from './NoteItem';
+import { cn } from '@/lib/utils/cn';
 
 const TAG_PALETTE = [
     { bg: 'rgba(99,102,241,0.15)', border: 'rgba(99,102,241,0.35)', color: '#818cf8' },
@@ -23,13 +25,33 @@ function getTagStyle(tag) {
 }
 
 export default function NotesList() {
-    const { notes, activeNote, setActiveNote, fetchNotes, createNote, loading } = useNotes();
+    const { notes, activeNote, setActiveNote, fetchNotes, createNote, loading, bulkArchiveNotes, bulkDeleteNotes, bulkTagNotes } = useNotes();
+    const { workspaces, activeWorkspaceId, setActiveWorkspaceId, fetchWorkspaces } = useWorkspaces();
 
     const [activeTag, setActiveTag] = useState(null);
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
+    const [bulkTagInput, setBulkTagInput] = useState('');
+    const [showBulkTagInput, setShowBulkTagInput] = useState(false);
 
     // Refs let each handler always see the other's latest value without extra deps
     const searchQueryRef = useRef('');
     const activeTagRef = useRef(null);
+    const wsIdRef = useRef(activeWorkspaceId);
+    wsIdRef.current = activeWorkspaceId;
+
+    useEffect(() => {
+        fetchWorkspaces();
+    }, [fetchWorkspaces]);
+
+    // Re-fetch notes when workspace changes
+    useEffect(() => {
+        const params = {};
+        if (searchQueryRef.current) params.search = searchQueryRef.current;
+        if (activeTagRef.current) params.tag = activeTagRef.current;
+        if (activeWorkspaceId) params.workspaceId = activeWorkspaceId;
+        fetchNotes(params);
+    }, [activeWorkspaceId, fetchNotes]);
 
     // Derive unique tags from the notes currently in state
     const allTags = useMemo(() => {
@@ -40,40 +62,115 @@ export default function NotesList() {
         return [...seen].sort();
     }, [notes, activeTag]);
 
+    const buildParams = useCallback(() => {
+        const params = {};
+        if (searchQueryRef.current) params.search = searchQueryRef.current;
+        if (activeTagRef.current) params.tag = activeTagRef.current;
+        if (wsIdRef.current) params.workspaceId = wsIdRef.current;
+        return params;
+    }, []);
+
     const handleSearch = useCallback((search) => {
         searchQueryRef.current = search;
-        const params = {};
-        if (search) params.search = search;
-        if (activeTagRef.current) params.tag = activeTagRef.current;
-        fetchNotes(params);
-    }, [fetchNotes]);
+        fetchNotes(buildParams());
+    }, [fetchNotes, buildParams]);
 
     const handleTagFilter = useCallback((tag) => {
         const newTag = activeTag === tag ? null : tag;
         setActiveTag(newTag);
         activeTagRef.current = newTag;
-        const params = {};
-        if (searchQueryRef.current) params.search = searchQueryRef.current;
-        if (newTag) params.tag = newTag;
-        fetchNotes(params);
-    }, [activeTag, fetchNotes]);
+        fetchNotes(buildParams());
+    }, [activeTag, fetchNotes, buildParams]);
 
     const handleNewNote = async () => {
-        await createNote({ title: '', body: '' });
+        await createNote({ title: '', body: '', workspaceId: activeWorkspaceId || undefined });
+    };
+
+    const toggleSelectMode = () => {
+        setSelectMode(prev => !prev);
+        setSelectedNoteIds(new Set());
+        setShowBulkTagInput(false);
+    };
+
+    const toggleNoteSelection = (noteId) => {
+        setSelectedNoteIds(prev => {
+            const next = new Set(prev);
+            if (next.has(noteId)) next.delete(noteId);
+            else next.add(noteId);
+            return next;
+        });
+    };
+
+    const selectAllNotes = () => {
+        setSelectedNoteIds(new Set(notes.map(n => n._id)));
+    };
+
+    const handleBulkArchive = async () => {
+        const ids = [...selectedNoteIds];
+        if (ids.length === 0) return;
+        await bulkArchiveNotes(ids);
+        setSelectedNoteIds(new Set());
+    };
+
+    const handleBulkDelete = async () => {
+        const ids = [...selectedNoteIds];
+        if (ids.length === 0) return;
+        if (!confirm(`Permanently delete ${ids.length} note${ids.length > 1 ? 's' : ''}?`)) return;
+        await bulkDeleteNotes(ids);
+        setSelectedNoteIds(new Set());
+    };
+
+    const handleBulkTag = async () => {
+        const tag = bulkTagInput.trim();
+        const ids = [...selectedNoteIds];
+        if (!tag || ids.length === 0) return;
+        await bulkTagNotes(ids, tag);
+        setBulkTagInput('');
+        setShowBulkTagInput(false);
     };
 
     return (
         <div className="w-72 flex flex-col border-r border-border-subtle bg-surface-base h-full">
             <div className="p-4 flex items-center justify-between border-b border-border-subtle">
                 <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">Notes</h2>
-                <button
-                    onClick={handleNewNote}
-                    className="p-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-                    title="New note"
-                >
-                    <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={toggleSelectMode}
+                        className={cn(
+                            'p-1 rounded-md transition-colors',
+                            selectMode
+                                ? 'bg-accent/20 text-accent'
+                                : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                        )}
+                        title={selectMode ? 'Exit select mode' : 'Select notes'}
+                    >
+                        <CheckSquare className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={handleNewNote}
+                        className="p-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                        title="New note"
+                    >
+                        <Plus className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
+
+            {/* Workspace filter */}
+            {workspaces.length > 0 && (
+                <div className="px-3 py-1.5 border-b border-border-subtle">
+                    <select
+                        value={activeWorkspaceId ?? ''}
+                        onChange={(e) => setActiveWorkspaceId(e.target.value || null)}
+                        className="w-full bg-surface-overlay border border-border-subtle rounded-md px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent/40"
+                    >
+                        <option value="">All Workspaces</option>
+                        {workspaces.map(ws => (
+                            <option key={ws._id} value={ws._id}>{ws.name}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             <NoteSearch onSearch={handleSearch} />
 
@@ -90,14 +187,73 @@ export default function NotesList() {
                                 style={isActive ? style : undefined}
                                 className={
                                     isActive
-                                        ? 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all'
-                                        : 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-border-subtle text-text-muted hover:border-border-default hover:text-text-secondary transition-all'
+                                        ? 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all'
+                                        : 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border border-border-subtle text-text-muted hover:border-border-default hover:text-text-secondary transition-all'
                                 }
                             >
                                 #{tag}
                             </button>
                         );
                     })}
+                </div>
+            )}
+
+            {/* Bulk actions toolbar */}
+            {selectMode && selectedNoteIds.size > 0 && (
+                <div className="px-3 py-2 border-b border-border-subtle bg-surface-raised/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-text-primary">
+                            {selectedNoteIds.size} selected
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button onClick={selectAllNotes} className="text-[11px] text-accent hover:text-accent/80 font-medium">
+                                All
+                            </button>
+                            <button onClick={toggleSelectMode} className="p-0.5 text-text-muted hover:text-text-primary">
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setShowBulkTagInput(prev => !prev)}
+                            className="flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-text-primary bg-surface-overlay px-2 py-1 rounded transition-colors"
+                        >
+                            <Tag className="w-3 h-3" /> Tag
+                        </button>
+                        <button
+                            onClick={handleBulkArchive}
+                            className="flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-amber-400 bg-surface-overlay px-2 py-1 rounded transition-colors"
+                        >
+                            <Archive className="w-3 h-3" /> Archive
+                        </button>
+                        <button
+                            onClick={handleBulkDelete}
+                            className="flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-red-400 bg-surface-overlay px-2 py-1 rounded transition-colors"
+                        >
+                            <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                    </div>
+                    {showBulkTagInput && (
+                        <div className="flex items-center gap-1.5">
+                            <input
+                                type="text"
+                                value={bulkTagInput}
+                                onChange={(e) => setBulkTagInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleBulkTag(); }}
+                                placeholder="Tag name"
+                                className="flex-1 bg-surface-overlay border border-border-default rounded px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-accent"
+                                autoFocus
+                            />
+                            <button
+                                onClick={handleBulkTag}
+                                disabled={!bulkTagInput.trim()}
+                                className="px-2 py-1 rounded bg-accent/20 text-accent text-[11px] font-medium hover:bg-accent/30 disabled:opacity-30"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -113,8 +269,10 @@ export default function NotesList() {
                         <NoteItem
                             key={note._id}
                             note={note}
-                            isActive={activeNote?._id === note._id}
-                            onClick={() => setActiveNote(note)}
+                            isActive={!selectMode && activeNote?._id === note._id}
+                            onClick={() => selectMode ? toggleNoteSelection(note._id) : setActiveNote(note)}
+                            selectMode={selectMode}
+                            isSelected={selectedNoteIds.has(note._id)}
                         />
                     ))
                 )}

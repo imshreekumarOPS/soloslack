@@ -8,8 +8,10 @@ import CardModal from '@/components/kanban/CardModal';
 import CreateColumnModal from '@/components/kanban/CreateColumnModal';
 import CreateCardModal from '@/components/kanban/CreateCardModal';
 import ImportBoardModal from '@/components/kanban/ImportBoardModal';
-import { exportBoardToJson } from '@/lib/utils/exportUtils';
-import { Download, Upload, Plus, AlertCircle, LayoutDashboard, CalendarDays } from 'lucide-react';
+import { exportBoardToJson, exportBoardToCsv } from '@/lib/utils/exportUtils';
+import { Download, Upload, Plus, AlertCircle, LayoutDashboard, CalendarDays, CheckSquare, X, Trash2, Archive, ArrowRight, FileJson, FileSpreadsheet } from 'lucide-react';
+import { useUndo } from '@/context/UndoContext';
+import { cn } from '@/lib/utils/cn';
 
 export default function BoardViewPage() {
     const { id } = useParams();
@@ -18,7 +20,9 @@ export default function BoardViewPage() {
         moveCard, createCard, updateCard, deleteCard,
         createColumn, updateColumn, deleteColumn,
         importBoard,
+        bulkDeleteCards, bulkMoveCards, bulkArchiveCards,
     } = useBoards();
+    const { showToast } = useUndo();
 
     const [selectedCardId, setSelectedCardId] = useState(null);
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
@@ -27,6 +31,10 @@ export default function BoardViewPage() {
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [activeColumnId, setActiveColumnId] = useState(null);
     const [view, setView] = useState('kanban'); // 'kanban' | 'calendar'
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedCardIds, setSelectedCardIds] = useState(new Set());
+    const [bulkMoveTarget, setBulkMoveTarget] = useState(null); // column id for move dropdown
+    const [showExportMenu, setShowExportMenu] = useState(false);
 
     useEffect(() => {
         if (id) fetchBoardFull(id);
@@ -93,14 +101,76 @@ export default function BoardViewPage() {
         setSelectedCardId(null);
     }, [deleteCard]);
 
-    const handleExport = useCallback(() => {
+    const handleExportJson = useCallback(() => {
         if (activeBoard) exportBoardToJson(activeBoard);
+        setShowExportMenu(false);
+    }, [activeBoard]);
+
+    const handleExportCsv = useCallback(() => {
+        if (activeBoard) exportBoardToCsv(activeBoard);
+        setShowExportMenu(false);
     }, [activeBoard]);
 
     const handleImport = useCallback(async (data) => {
         const res = await importBoard(data);
         if (res?.boardId) window.location.href = `/boards/${res.boardId}`;
     }, [importBoard]);
+
+    const toggleSelectMode = useCallback(() => {
+        setSelectMode(prev => !prev);
+        setSelectedCardIds(new Set());
+        setBulkMoveTarget(null);
+    }, []);
+
+    const toggleCardSelection = useCallback((cardId) => {
+        setSelectedCardIds(prev => {
+            const next = new Set(prev);
+            if (next.has(cardId)) next.delete(cardId);
+            else next.add(cardId);
+            return next;
+        });
+    }, []);
+
+    const selectAllCards = useCallback(() => {
+        if (!activeBoard) return;
+        const allIds = activeBoard.columns.flatMap(c => c.cards.map(card => card._id));
+        setSelectedCardIds(new Set(allIds));
+    }, [activeBoard]);
+
+    const handleBulkDelete = useCallback(async () => {
+        const ids = [...selectedCardIds];
+        if (ids.length === 0) return;
+        if (!confirm(`Delete ${ids.length} card${ids.length > 1 ? 's' : ''} permanently?`)) return;
+        await bulkDeleteCards(ids);
+        setSelectedCardIds(new Set());
+    }, [selectedCardIds, bulkDeleteCards]);
+
+    const handleBulkArchive = useCallback(async () => {
+        const ids = [...selectedCardIds];
+        if (ids.length === 0) return;
+        await bulkArchiveCards(ids);
+        setSelectedCardIds(new Set());
+    }, [selectedCardIds, bulkArchiveCards]);
+
+    // Accepts (ids, targetColumnId) from drag-drop or (targetColumnId) from toolbar
+    const handleBulkMove = useCallback(async (idsOrColumnId, maybeColumnId) => {
+        let ids, targetColumnId;
+        if (Array.isArray(idsOrColumnId)) {
+            ids = idsOrColumnId;
+            targetColumnId = maybeColumnId;
+        } else {
+            ids = [...selectedCardIds];
+            targetColumnId = idsOrColumnId;
+        }
+        if (ids.length === 0) return;
+        try {
+            await bulkMoveCards(ids, targetColumnId);
+            setSelectedCardIds(new Set());
+            setBulkMoveTarget(null);
+        } catch (err) {
+            showToast({ label: err.message, type: 'error' });
+        }
+    }, [selectedCardIds, bulkMoveCards]);
 
     // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -161,6 +231,20 @@ export default function BoardViewPage() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
+                    {/* Select mode toggle */}
+                    <button
+                        onClick={toggleSelectMode}
+                        className={cn(
+                            'p-1.5 rounded-md transition-colors',
+                            selectMode
+                                ? 'bg-accent/20 text-accent'
+                                : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                        )}
+                        title={selectMode ? 'Exit select mode' : 'Select cards'}
+                    >
+                        <CheckSquare className="w-4 h-4" />
+                    </button>
+
                     {/* View toggle */}
                     <div className="flex bg-surface-overlay rounded-md p-0.5 border border-border-default mr-1">
                         <button
@@ -186,13 +270,34 @@ export default function BoardViewPage() {
                     >
                         <Upload className="w-4 h-4" />
                     </button>
-                    <button
-                        onClick={handleExport}
-                        className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-                        title="Export board as JSON"
-                    >
-                        <Download className="w-4 h-4" />
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowExportMenu(prev => !prev)}
+                            className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                            title="Export board"
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                        {showExportMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
+                                <div className="absolute right-0 top-full mt-1 bg-surface-overlay border border-border-subtle rounded-lg shadow-xl py-1 min-w-[170px] z-50">
+                                    <button
+                                        onClick={handleExportJson}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors flex items-center gap-2"
+                                    >
+                                        <FileJson className="w-3.5 h-3.5" /> Export as JSON
+                                    </button>
+                                    <button
+                                        onClick={handleExportCsv}
+                                        className="w-full text-left px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors flex items-center gap-2"
+                                    >
+                                        <FileSpreadsheet className="w-3.5 h-3.5" /> Export as CSV
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <button
                         onClick={() => setIsColumnModalOpen(true)}
                         className="flex items-center gap-1.5 text-xs font-semibold bg-accent hover:bg-accent/90 text-white px-3 py-1.5 rounded-md transition-colors"
@@ -209,11 +314,15 @@ export default function BoardViewPage() {
                         columns={activeBoard.columns}
                         cardsByColumn={cardsByColumn}
                         onMoveCard={moveCard}
+                        onBulkMoveCards={handleBulkMove}
                         onAddCard={handleAddCard}
                         onAddColumn={() => setIsColumnModalOpen(true)}
-                        onCardClick={handleCardClick}
+                        onCardClick={selectMode ? null : handleCardClick}
                         onUpdateColumn={updateColumn}
                         onDeleteColumn={deleteColumn}
+                        selectMode={selectMode}
+                        selectedCardIds={selectedCardIds}
+                        onToggleCardSelection={toggleCardSelection}
                     />
                 ) : (
                     <BoardCalendar
@@ -246,6 +355,70 @@ export default function BoardViewPage() {
                 onClose={() => setIsImportModalOpen(false)}
                 onImport={handleImport}
             />
+
+            {/* Bulk actions toolbar */}
+            {selectMode && selectedCardIds.size > 0 && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-surface-overlay border border-border-default rounded-xl shadow-2xl px-4 py-2.5 animate-in slide-in-from-bottom-4">
+                    <span className="text-xs font-semibold text-text-primary mr-1">
+                        {selectedCardIds.size} selected
+                    </span>
+
+                    <button
+                        onClick={selectAllCards}
+                        className="text-[11px] text-accent hover:text-accent/80 transition-colors font-medium"
+                    >
+                        Select all
+                    </button>
+
+                    <div className="w-px h-5 bg-border-subtle mx-1" />
+
+                    {/* Move to column */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setBulkMoveTarget(prev => prev ? null : 'open')}
+                            className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-text-primary bg-surface-hover hover:bg-surface-active px-2.5 py-1.5 rounded-md transition-colors"
+                        >
+                            <ArrowRight className="w-3.5 h-3.5" /> Move
+                        </button>
+                        {bulkMoveTarget && (
+                            <div className="absolute bottom-full mb-2 left-0 bg-surface-overlay border border-border-subtle rounded-lg shadow-xl py-1 min-w-[160px] z-50">
+                                {activeBoard.columns.map(col => (
+                                    <button
+                                        key={col._id}
+                                        onClick={() => handleBulkMove(col._id)}
+                                        className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
+                                    >
+                                        {col.name}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={handleBulkArchive}
+                        className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-amber-400 bg-surface-hover hover:bg-amber-500/10 px-2.5 py-1.5 rounded-md transition-colors"
+                    >
+                        <Archive className="w-3.5 h-3.5" /> Archive
+                    </button>
+                    <button
+                        onClick={handleBulkDelete}
+                        className="flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-red-400 bg-surface-hover hover:bg-red-500/10 px-2.5 py-1.5 rounded-md transition-colors"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+
+                    <div className="w-px h-5 bg-border-subtle mx-1" />
+
+                    <button
+                        onClick={toggleSelectMode}
+                        className="p-1 text-text-muted hover:text-text-primary transition-colors"
+                        title="Cancel"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

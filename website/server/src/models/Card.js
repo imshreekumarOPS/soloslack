@@ -50,6 +50,20 @@ const cardSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        labels: {
+            type: [
+                {
+                    text: { type: String, required: true, trim: true, maxlength: 30 },
+                    color: {
+                        type: String,
+                        required: true,
+                        enum: ['red', 'orange', 'amber', 'green', 'blue', 'purple'],
+                    },
+                },
+            ],
+            default: [],
+            validate: [arr => arr.length <= 6, 'A card can have at most 6 labels'],
+        },
         checklist: {
             type: [
                 {

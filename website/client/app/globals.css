@@ -81,6 +81,16 @@
   --foreground: var(--text-primary);
 }
 
+html {
+  /* Bump base from 16px → 17px so all rem-based sizing (Tailwind text-xs/sm/base, spacing, etc.) scales up ~6% */
+  font-size: 17px;
+}
+
+/* Scale up hardcoded pixel font sizes that Tailwind won't adjust via rem */
+.\!text-\[9px\], .text-\[9px\]   { font-size: 11px !important; }
+.\!text-\[10px\], .text-\[10px\] { font-size: 12px !important; }
+.\!text-\[11px\], .text-\[11px\] { font-size: 13px !important; }
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -91,8 +101,8 @@ body {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
@@ -133,6 +143,21 @@ body {
 @keyframes pulseGlow {
   0%, 100% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.15); }
   50% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.3); }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.2s ease-out both;
 }
 
 .animate-fade-in-up {
