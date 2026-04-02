@@ -146,6 +146,7 @@ website/
         └── routes/          # Express routes
 ```
 
+
 ## 📡 API Endpoints Summary
 
 -   **Notes**: `GET /api/notes`, `POST /api/notes`, `PATCH /api/notes/:id`, `DELETE /api/notes/:id`, `PATCH /api/notes/:id/restore`, bulk archive/delete/restore/tag
