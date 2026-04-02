@@ -1,4 +1,4 @@
-import { Pin } from 'lucide-react';
+import { Pin, File as FileIcon } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { timeAgo } from '@/lib/utils/formatDate';
 import { stripMarkdown } from '@/lib/utils/markdown';
@@ -50,6 +50,9 @@ export default function NoteItem({ note, isActive, onClick, selectMode, isSelect
                 )}
                 {!selectMode && note.isPinned && (
                     <Pin className="w-3 h-3 text-accent shrink-0 mt-0.5" />
+                )}
+                {note.type === 'file' && (
+                    <FileIcon className="w-3 h-3 text-text-secondary shrink-0 mt-0.5" />
                 )}
                 <h4 className="text-sm font-medium text-text-primary truncate flex-1">
                     {note.title || 'Untitled'}

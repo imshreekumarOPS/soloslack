@@ -18,12 +18,14 @@ import { cn } from '@/lib/utils/cn';
 import CardPicker from '../kanban/CardPicker';
 import { cardsApi } from '@/lib/api/cardsApi';
 import { exportNoteToMarkdown, exportNoteToPdf } from '@/lib/utils/exportUtils';
-import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download, Maximize2, Minimize2, FileText, FileDown, Sparkles, ListChecks, Tags, Wand2, Type, ShrinkIcon, Expand, CheckCheck, Eraser, Send, MessageSquare } from 'lucide-react';
+import { Link as LinkIcon, Trash2, Save, Pin, PinOff, Eye, Edit3, X, Hash, Download, Maximize2, Minimize2, FileText, FileDown, Sparkles, ListChecks, Tags, Wand2, Type, ShrinkIcon, Expand, CheckCheck, Eraser, Send, MessageSquare, ExternalLink, File as FileIcon } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { useAI } from '@/context/AIContext';
 import { useUndo } from '@/context/UndoContext';
+import { fileApi } from '@/lib/api/fileApi';
 import { noteSummaryPrompt, autoTagPrompt, writingAssistantPrompt, noteToCardsPrompt } from '@/lib/ai/prompts';
 import NoteToCardsModal from '../ai/NoteToCardsModal';
+import ConfirmModal from '../ui/ConfirmModal';
 
 // Deterministic tag color from a fixed palette
 const TAG_PALETTE = [
@@ -66,6 +68,7 @@ export default function NoteEditor() {
     const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
     const [isCardPickerOpen, setIsCardPickerOpen] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     // AI states
     const [aiLoading, setAiLoading] = useState(null); // 'summary' | 'tags' | 'writing' | 'prompt' | null
@@ -76,6 +79,12 @@ export default function NoteEditor() {
     const [aiPromptText, setAiPromptText] = useState('');
     const aiPromptInputRef = useRef(null);
     const previewRef = useRef(null);
+
+    // File rendering states
+    const [fileContent, setFileContent] = useState(null);
+    const [fetchingContent, setFetchingContent] = useState(false);
+    const [fetchError, setFetchError] = useState(null);
+
     // Writing assistant
     const [writingSelection, setWritingSelection] = useState(null); // { start, end, text }
     const [showWritingMenu, setShowWritingMenu] = useState(false);
@@ -140,9 +149,40 @@ export default function NoteEditor() {
         setTagInput('');
         setMode('edit');
         setSaveStatus('idle');
+        setFileContent(null);
+        setFetchingContent(false);
+        setFetchError(null);
         noteIdRef.current = activeNote._id;
         savedRef.current = { title: activeNote.title || '', body: activeNote.body || '' };
     }, [activeNote?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Fetch file content if activeNote is a renderable file
+    useEffect(() => {
+        if (!activeNote || activeNote.type !== 'file' || !activeNote.url) return;
+
+        const renderableMimes = ['text/plain', 'text/markdown', 'application/octet-stream'];
+        const isRenderable = renderableMimes.includes(activeNote.mimeType) || 
+                            activeNote.name?.endsWith('.md') || 
+                            activeNote.name?.endsWith('.txt');
+
+        if (!isRenderable) return;
+
+        const fetchContent = async () => {
+            setFetchingContent(true);
+            setFetchError(null);
+            try {
+                const content = await fileApi.fetchFileContent(activeNote.url);
+                setFileContent(content);
+            } catch (err) {
+                console.error('Failed to fetch file content:', err);
+                setFetchError('Failed to load file content. Please check your connection or CORS settings.');
+            } finally {
+                setFetchingContent(false);
+            }
+        };
+
+        fetchContent();
+    }, [activeNote?._id, activeNote?.url, activeNote?.type]);
 
     // Schedule auto-save whenever title or body changes
     useEffect(() => {
@@ -174,9 +214,7 @@ export default function NoteEditor() {
     };
 
     const handleDelete = () => {
-        if (confirm('Delete this note? This cannot be undone.')) {
-            deleteNote(activeNote._id);
-        }
+        setConfirmDelete(true);
     };
 
     const handleLinkCard = async (card) => {
@@ -692,112 +730,220 @@ export default function NoteEditor() {
             {/* Content area */}
             <div className="flex-1 overflow-y-auto">
                 <div className={cn('p-8 mx-auto w-full transition-all duration-300', focusMode ? 'max-w-4xl' : 'max-w-3xl')}>
-                    {mode === 'edit' ? (
-                        <div className="space-y-4">
-                            <input
-                                type="text"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                placeholder="Untitled"
-                                className="text-3xl font-bold bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted w-full"
-                            />
-                            {/* Tag bar — edit mode */}
-                            <div className="flex flex-wrap items-center gap-1.5 min-h-[28px]">
+                    {activeNote.type === 'file' ? (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 rounded-2xl bg-surface-overlay border border-border-subtle flex items-center justify-center text-text-secondary">
+                                    <FileIcon className="w-8 h-8" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h1 className="text-3xl font-bold text-text-primary break-words">{activeNote.title || 'Untitled'}</h1>
+                                    <p className="text-sm text-text-muted mt-1">Uploaded {timeAgo(activeNote.createdAt)}</p>
+                                </div>
+                            </div>
+
+                            {/* Tags for files */}
+                            <div className="flex flex-wrap items-center gap-1.5 pt-2">
                                 <Hash className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                                {tags.map(tag => (
+                                {activeNote.tags?.map(tag => (
                                     <span
                                         key={tag}
                                         style={getTagStyle(tag)}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border"
                                     >
                                         {tag}
-                                        <button
-                                            onClick={() => handleRemoveTag(tag)}
-                                            className="hover:opacity-60 transition-opacity ml-0.5"
-                                        >
-                                            <X className="w-2.5 h-2.5" />
-                                        </button>
                                     </span>
                                 ))}
-                                {/* AI suggested tags */}
-                                {suggestedTags.map(tag => (
-                                    <span
-                                        key={`suggest-${tag}`}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-dashed border-purple-500/30 bg-purple-500/10 text-purple-400"
-                                    >
-                                        <Sparkles className="w-2.5 h-2.5" />
-                                        {tag}
-                                        <button
-                                            onClick={() => handleAcceptTag(tag)}
-                                            className="hover:opacity-60 transition-opacity ml-0.5 text-emerald-400"
-                                            title="Accept"
-                                        >
-                                            <CheckCheck className="w-2.5 h-2.5" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDismissTag(tag)}
-                                            className="hover:opacity-60 transition-opacity text-red-400"
-                                            title="Dismiss"
-                                        >
-                                            <X className="w-2.5 h-2.5" />
-                                        </button>
-                                    </span>
-                                ))}
-                                <input
-                                    type="text"
-                                    value={tagInput}
-                                    onChange={e => setTagInput(e.target.value)}
-                                    onKeyDown={handleTagKeyDown}
-                                    onBlur={() => tagInput && handleAddTag(tagInput)}
-                                    placeholder={tags.length === 0 ? 'Add tags…' : '+tag'}
-                                    className="text-xs bg-transparent outline-none text-text-secondary placeholder:text-text-muted min-w-[70px]"
-                                />
                             </div>
-                            <div className="relative">
-                                <textarea
-                                    ref={textareaRef}
-                                    value={body}
-                                    onChange={handleBodyChange}
-                                    onKeyDown={handleTextareaKeyDown}
-                                    onMouseUp={handleTextSelect}
-                                    placeholder="Write in markdown… use [[Note Title]] to link notes"
-                                    className="w-full min-h-[60vh] bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted resize-none font-mono text-sm leading-relaxed"
-                                />
 
-                                {/* Wiki autocomplete picker */}
-                                {wikiQuery !== null && wikiSuggestions.length > 0 && (
-                                    <div
-                                        className="fixed z-50 w-64 bg-surface-overlay border border-border-subtle rounded-xl shadow-2xl overflow-hidden"
-                                        style={{ top: wikiPickerPos.top, left: wikiPickerPos.left }}
-                                    >
-                                        <p className="px-3 py-1.5 text-[11px] font-semibold text-text-muted uppercase tracking-widest border-b border-border-subtle bg-surface-base/60">
-                                            Link note
-                                        </p>
-                                        {wikiSuggestions.map((n, i) => (
-                                            <button
-                                                key={n._id}
-                                                onMouseDown={(e) => { e.preventDefault(); insertWikiLink(n); }}
-                                                className={cn(
-                                                    'w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors border-b border-border-subtle/40',
-                                                    i === wikiSelectedIdx ? 'bg-accent/10 text-accent' : 'text-text-primary hover:bg-surface-hover'
-                                                )}
-                                            >
-                                                <span className="text-[11px] opacity-50">↗</span>
-                                                <span className="truncate">{n.title}</span>
-                                            </button>
-                                        ))}
-                                        <p className="px-3 py-1 text-[11px] text-text-muted">
-                                            ↑↓ navigate · Enter select · Esc dismiss
-                                        </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6">
+                                <div className="p-5 rounded-2xl bg-surface-overlay border border-border-subtle hover:border-accent/30 transition-colors group">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-2 rounded-lg bg-accent/10 text-accent">
+                                            <FileText className="w-5 h-5" />
+                                        </div>
+                                        <span className="text-xs font-mono text-text-muted">{(activeNote.size / 1024).toFixed(1)} KB</span>
+                                    </div>
+                                    <h4 className="text-sm font-semibold text-text-primary mb-2">File Details</h4>
+                                    <p className="text-xs text-text-secondary leading-relaxed mb-4">
+                                        Type: {activeNote.mimeType || 'Unknown'}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <a
+                                            href={activeNote.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent/90 text-white rounded-lg text-xs font-semibold transition-all active:scale-95"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> Download
+                                        </a>
+                                        <a
+                                            href={activeNote.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-base hover:bg-surface-hover text-text-primary border border-border-subtle rounded-lg text-xs font-semibold transition-all active:scale-95"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" /> Open
+                                        </a>
+                                    </div>
+                                </div>
+
+                                {activeNote.mimeType?.startsWith('image/') && (
+                                    <div className="rounded-2xl border border-border-subtle overflow-hidden bg-surface-overlay flex items-center justify-center p-2 min-h-[200px]">
+                                        <img
+                                            src={activeNote.url}
+                                            alt={activeNote.title}
+                                            className="max-w-full max-h-[300px] object-contain rounded-lg shadow-lg"
+                                            onClick={() => window.open(activeNote.url, '_blank')}
+                                        />
                                     </div>
                                 )}
                             </div>
+
+                            {/* Rendered File Content */}
+                            {(fetchingContent || fileContent || fetchError) && (
+                                <div className="mt-8 pt-8 border-t border-border-subtle">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className="w-8 h-8 rounded-lg bg-surface-overlay border border-border-subtle flex items-center justify-center text-text-muted">
+                                            <FileText className="w-4 h-4" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-text-primary">Document Preview</h3>
+                                        {fetchingContent && (
+                                            <span className="text-xs text-text-muted animate-pulse">Loading content...</span>
+                                        )}
+                                    </div>
+
+                                    {fetchingContent ? (
+                                        <div className="space-y-3">
+                                            <div className="h-4 bg-surface-hover rounded w-3/4 animate-pulse" />
+                                            <div className="h-4 bg-surface-hover rounded w-full animate-pulse" />
+                                            <div className="h-4 bg-surface-hover rounded w-5/6 animate-pulse" />
+                                        </div>
+                                    ) : fetchError ? (
+                                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                                            <p className="text-sm text-red-400">{fetchError}</p>
+                                            <button 
+                                                onClick={() => window.location.reload()}
+                                                className="text-xs text-red-400 underline mt-2 hover:text-red-300"
+                                            >
+                                                Try refreshing the page
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="prose prose-invert max-w-none">
+                                            <MarkdownRenderer content={fileContent} onWikiLink={handleWikiLink} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ) : (
-                        <div className="space-y-4">
-                            <h1 className="text-3xl font-bold text-text-primary">{title || 'Untitled'}</h1>
-                            {/* Tag bar — preview mode */}
-                            {tags.length > 0 && (
+                        mode === 'edit' ? (
+                            <div className="space-y-4">
+                                <input
+                                    type="text"
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    placeholder="Untitled"
+                                    className="text-3xl font-bold bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted w-full"
+                                />
+                                {/* Tag bar — edit mode */}
+                                <div className="flex flex-wrap items-center gap-1.5 min-h-[28px]">
+                                    <Hash className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                                    {tags.map(tag => (
+                                        <span
+                                            key={tag}
+                                            style={getTagStyle(tag)}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                                        >
+                                            {tag}
+                                            <button
+                                                onClick={() => handleRemoveTag(tag)}
+                                                className="hover:opacity-60 transition-opacity ml-0.5"
+                                            >
+                                                <X className="w-2.5 h-2.5" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    {/* AI suggested tags */}
+                                    {suggestedTags.map(tag => (
+                                        <span
+                                            key={`suggest-${tag}`}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-dashed border-purple-500/30 bg-purple-500/10 text-purple-400"
+                                        >
+                                            <Sparkles className="w-2.5 h-2.5" />
+                                            {tag}
+                                            <button
+                                                onClick={() => handleAcceptTag(tag)}
+                                                className="hover:opacity-60 transition-opacity ml-0.5 text-emerald-400"
+                                                title="Accept"
+                                            >
+                                                <CheckCheck className="w-2.5 h-2.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDismissTag(tag)}
+                                                className="hover:opacity-60 transition-opacity text-red-400"
+                                                title="Dismiss"
+                                            >
+                                                <X className="w-2.5 h-2.5" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    <input
+                                        type="text"
+                                        value={tagInput}
+                                        onChange={e => setTagInput(e.target.value)}
+                                        onKeyDown={handleTagKeyDown}
+                                        onBlur={() => tagInput && handleAddTag(tagInput)}
+                                        placeholder={tags.length === 0 ? 'Add tags…' : '+tag'}
+                                        className="text-xs bg-transparent outline-none text-text-secondary placeholder:text-text-muted min-w-[70px]"
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <textarea
+                                        ref={textareaRef}
+                                        value={body}
+                                        onChange={handleBodyChange}
+                                        onKeyDown={handleTextareaKeyDown}
+                                        onMouseUp={handleTextSelect}
+                                        placeholder="Write in markdown… use [[Note Title]] to link notes"
+                                        className="w-full min-h-[60vh] bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted resize-none font-mono text-sm leading-relaxed"
+                                    />
+
+                                    {/* Wiki autocomplete picker */}
+                                    {wikiQuery !== null && wikiSuggestions.length > 0 && (
+                                        <div
+                                            className="fixed z-50 w-64 bg-surface-overlay border border-border-subtle rounded-xl shadow-2xl overflow-hidden"
+                                            style={{ top: wikiPickerPos.top, left: wikiPickerPos.left }}
+                                        >
+                                            <p className="px-3 py-1.5 text-[11px] font-semibold text-text-muted uppercase tracking-widest border-b border-border-subtle bg-surface-base/60">
+                                                Link note
+                                            </p>
+                                            {wikiSuggestions.map((n, i) => (
+                                                <button
+                                                    key={n._id}
+                                                    onMouseDown={(e) => { e.preventDefault(); insertWikiLink(n); }}
+                                                    className={cn(
+                                                        'w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors border-b border-border-subtle/40',
+                                                        i === wikiSelectedIdx ? 'bg-accent/10 text-accent' : 'text-text-primary hover:bg-surface-hover'
+                                                    )}
+                                                >
+                                                    <span className="text-[11px] opacity-50">↗</span>
+                                                    <span className="truncate">{n.title}</span>
+                                                </button>
+                                            ))}
+                                            <p className="px-3 py-1 text-[11px] text-text-muted">
+                                                ↑↓ navigate · Enter select · Esc dismiss
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <h1 className="text-3xl font-bold text-text-primary">{title || 'Untitled'}</h1>
+                                {/* Tag bar — preview mode */}
+                                {tags.length > 0 && (
                                 <div className="flex flex-wrap items-center gap-1.5">
                                     <Hash className="w-3.5 h-3.5 text-text-muted shrink-0" />
                                     {tags.map(tag => (
@@ -817,7 +963,8 @@ export default function NoteEditor() {
                                     onWikiLink={handleWikiLink}
                                 />
                             </div>
-                        </div>
+                            </div>
+                        )
                     )}
 
                     {/* Hidden preview — always renders markdown so PDF export captures mermaid diagrams */}
@@ -935,6 +1082,15 @@ export default function NoteEditor() {
                 onClose={() => setShowNoteToCards(false)}
                 noteTitle={title}
                 noteBody={body}
+            />
+
+            <ConfirmModal
+                isOpen={confirmDelete}
+                onClose={() => setConfirmDelete(false)}
+                onConfirm={() => deleteNote(activeNote._id)}
+                title="Delete Note"
+                message="Delete this note? This cannot be undone."
+                confirmText="Delete"
             />
         </div>
     );

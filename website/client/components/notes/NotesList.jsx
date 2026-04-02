@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, CheckSquare, X, Archive, Trash2, Tag } from 'lucide-react';
+import { Plus, CheckSquare, X, Archive, Trash2, Tag, Upload } from 'lucide-react';
 import { useNotes } from '@/context/NotesContext';
 import { useWorkspaces } from '@/context/WorkspacesContext';
 import NoteSearch from './NoteSearch';
 import NoteItem from './NoteItem';
+import ConfirmModal from '../ui/ConfirmModal';
+import DocumentUploadModal from './DocumentUploadModal';
 import { cn } from '@/lib/utils/cn';
 
 const TAG_PALETTE = [
@@ -33,6 +35,8 @@ export default function NotesList() {
     const [selectedNoteIds, setSelectedNoteIds] = useState(new Set());
     const [bulkTagInput, setBulkTagInput] = useState('');
     const [showBulkTagInput, setShowBulkTagInput] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
 
     // Refs let each handler always see the other's latest value without extra deps
     const searchQueryRef = useRef('');
@@ -112,10 +116,13 @@ export default function NotesList() {
         setSelectedNoteIds(new Set());
     };
 
-    const handleBulkDelete = async () => {
+    const handleBulkDelete = () => {
+        if (selectedNoteIds.size === 0) return;
+        setConfirmDelete(true);
+    };
+
+    const executeBulkDelete = async () => {
         const ids = [...selectedNoteIds];
-        if (ids.length === 0) return;
-        if (!confirm(`Permanently delete ${ids.length} note${ids.length > 1 ? 's' : ''}?`)) return;
         await bulkDeleteNotes(ids);
         setSelectedNoteIds(new Set());
     };
@@ -145,6 +152,13 @@ export default function NotesList() {
                         title={selectMode ? 'Exit select mode' : 'Select notes'}
                     >
                         <CheckSquare className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={() => setShowUploadModal(true)}
+                        className="p-1 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                        title="Upload document"
+                    >
+                        <Upload className="w-4 h-4" />
                     </button>
                     <button
                         onClick={handleNewNote}
@@ -277,6 +291,23 @@ export default function NotesList() {
                     ))
                 )}
             </div>
+
+            <ConfirmModal
+                isOpen={confirmDelete}
+                onClose={() => setConfirmDelete(false)}
+                onConfirm={executeBulkDelete}
+                title="Delete Notes"
+                message={`Permanently delete ${selectedNoteIds.size} note${selectedNoteIds.size > 1 ? 's' : ''}? This cannot be undone.`}
+                confirmText="Delete"
+            />
+
+            <DocumentUploadModal
+                isOpen={showUploadModal}
+                onClose={() => setShowUploadModal(false)}
+                workspaceId={activeWorkspaceId}
+                noteId={activeNote?._id}
+                onUploadSuccess={() => fetchNotes(buildParams())}
+            />
         </div>
     );
 }

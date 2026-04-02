@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 router.use('/notes', require('./notes.routes'));
+router.use('/files', require('./file.routes'));
 router.use('/boards', require('./boards.routes'));
 router.use('/workspaces', require('./workspaces.routes'));
 router.use('/columns', require('./columns.routes'));

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { MoreHorizontal, Edit2, Trash2, Plus, ChevronLeft, ChevronRight, Gauge } from 'lucide-react';
+import ConfirmModal from '../ui/ConfirmModal';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import KanbanCard from './KanbanCard';
@@ -12,6 +13,7 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isWipEditing, setIsWipEditing] = useState(false);
     const [wipInput, setWipInput] = useState('');
+    const [confirmDelete, setConfirmDelete] = useState(false);
     const menuRef = useRef(null);
     const inputRef = useRef(null);
     const wipInputRef = useRef(null);
@@ -62,11 +64,9 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
         setIsMenuOpen(false);
     };
 
-    const handleDelete = async () => {
+    const handleDelete = () => {
         setIsMenuOpen(false);
-        if (window.confirm(`Delete column "${column.name}" and all its ${cards.length} card${cards.length !== 1 ? 's' : ''}?`)) {
-            await onDeleteColumn(column._id);
-        }
+        setConfirmDelete(true);
     };
 
     const openWipEditor = () => {
@@ -328,6 +328,15 @@ export default function KanbanColumn({ column, cards, onCardClick, onAddCard, on
                     <Plus className="w-4 h-4" /> Add Card
                 </button>
             </footer>
+
+            <ConfirmModal
+                isOpen={confirmDelete}
+                onClose={() => setConfirmDelete(false)}
+                onConfirm={() => onDeleteColumn(column._id)}
+                title="Delete Column"
+                message={`Delete column "${column.name}" and all its ${cards.length} card${cards.length !== 1 ? 's' : ''}?`}
+                confirmText="Delete"
+            />
         </div>
     );
 }

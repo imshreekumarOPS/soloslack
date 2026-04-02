@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] — v1.4.0 — AI, Workspaces, Comments & Data Integrity
+
+### Added
+- **AI integration** — multi-provider (OpenAI, Anthropic, Gemini) AI features: writing assistant, note summaries, auto-tagging, card description generation, note-to-cards, auto-prioritize, board template generator, weekly digest, workflow suggestions, semantic search, and custom prompts
+- **Analytics dashboard** — new `/analytics` page with token usage charts, provider breakdown, model usage, and request logs; all data stored locally
+- **Workspaces** — create color-coded workspaces to organize boards and notes; full CRUD with drag-to-reorder and filtering
+- **Card comments** — add, edit, and delete comments on kanban cards
+- **Card labels** — up to 6 labels per card with 6 color options
+- **Mermaid diagrams** — render flowcharts, sequence diagrams, and more in notes via ` ```mermaid ` code blocks with dark mode support
+- **Bulk operations** — bulk delete/move cards, bulk archive/delete/restore/tag notes
+- **Undo system** — undo deletions and bulk operations via toast notifications or `Ctrl+Z`
+- **PDF export** — export notes as rendered PDF (includes mermaid diagrams); CSV board export; bulk note export
+- **AI settings** — configure and validate API keys for 3 providers in the settings page
+
+### Enhanced
+- Sidebar redesigned with workspace section, color dots, inline create/edit, and workspace-scoped board filtering
+- Card modal with labels, comments, and AI description generation
+- Note editor with AI toolbar (summary, auto-tag, custom prompt, writing assistant) and export menu
+- WIP limit enforcement on card create and move
+- **UI sizing** — bumped minimum text sizes from 9–10px to 11px and enlarged small icons across all components for better readability
+
+### Fixed
+- **Workspace delete fully cascades** — removes all boards, columns, cards, comments, and notes
+- **Board soft-delete archives its cards** — restoring a board restores its cards too
+- **Board permanent delete cleans up note links** — removes card refs from `Note.linkedCards[]`
+- **Note soft-delete/bulk-archive unlinks cards** — sets `Card.linkedNoteId = null` on referencing cards
+- **AI dropdown hover fix** — converted from unreliable `group-hover` to click-toggle with backdrop dismiss
+- **NoteEditor linked cards key warning** — filtered stale entries to fix React duplicate-key warning
+
+---
+
 ## [Unreleased] — v1.3.0
 
 ### Added

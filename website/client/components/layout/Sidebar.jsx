@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils/cn';
 import CreateBoardModal from '@/components/kanban/CreateBoardModal';
 import DeleteBoardModal from '@/components/kanban/DeleteBoardModal';
 import AnimatedIcon from '@/components/ui/AnimatedIcon';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import UnifiedSearch from '@/components/ui/UnifiedSearch';
 import KeyboardShortcutsModal from '@/components/ui/KeyboardShortcutsModal';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -102,6 +103,7 @@ export default function Sidebar() {
     const [editingWsId, setEditingWsId] = useState(null);
     const [editingWsName, setEditingWsName] = useState('');
     const [wsMenuId, setWsMenuId] = useState(null);
+    const [confirmDeleteWs, setConfirmDeleteWs] = useState(null);
     const wsMenuRef = useRef(null);
     const wsInputRef = useRef(null);
 
@@ -150,10 +152,16 @@ export default function Sidebar() {
         setEditingWsName('');
     };
 
-    const handleDeleteWs = async (id) => {
-        if (!confirm('Delete this workspace? Boards and notes inside will become uncategorized.')) return;
-        await deleteWorkspace(id);
+    const handleDeleteWs = (id) => {
+        setConfirmDeleteWs(id);
         setWsMenuId(null);
+    };
+
+    const executeDeleteWs = async () => {
+        if (confirmDeleteWs) {
+            await deleteWorkspace(confirmDeleteWs);
+            setConfirmDeleteWs(null);
+        }
     };
 
     // Global keyboard shortcuts
@@ -638,6 +646,15 @@ export default function Sidebar() {
             <KeyboardShortcutsModal
                 isOpen={isShortcutsOpen}
                 onClose={() => setIsShortcutsOpen(false)}
+            />
+
+            <ConfirmModal
+                isOpen={!!confirmDeleteWs}
+                onClose={() => setConfirmDeleteWs(null)}
+                onConfirm={executeDeleteWs}
+                title="Delete Workspace"
+                message="Delete this workspace? Boards and notes inside will become uncategorized."
+                confirmText="Delete"
             />
         </aside>
     );

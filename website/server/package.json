@@ -12,11 +12,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1021.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "mongoose": "^9.2.4",
-    "morgan": "^1.10.1"
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

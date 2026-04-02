@@ -10,6 +10,7 @@ import CreateCardModal from '@/components/kanban/CreateCardModal';
 import ImportBoardModal from '@/components/kanban/ImportBoardModal';
 import { exportBoardToJson, exportBoardToCsv } from '@/lib/utils/exportUtils';
 import { Download, Upload, Plus, AlertCircle, LayoutDashboard, CalendarDays, CheckSquare, X, Trash2, Archive, ArrowRight, FileJson, FileSpreadsheet } from 'lucide-react';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import { useUndo } from '@/context/UndoContext';
 import { cn } from '@/lib/utils/cn';
 

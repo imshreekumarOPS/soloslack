@@ -31,6 +31,7 @@ export default function RootLayout({ children }) {
                                     document.documentElement.style.colorScheme = theme;
                                 } catch (e) {}
                             })();
+                            document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
                         `,
                     }}
                 />

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { LayoutList } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { boardsApi } from '@/lib/api/boardsApi';
 import { cardsApi } from '@/lib/api/cardsApi';
@@ -62,8 +63,8 @@ export default function CardPicker({ isOpen, onClose, onSelect }) {
                                 }}
                                 className="w-full text-left p-3 rounded-lg border border-border-subtle hover:border-accent hover:bg-surface-hover transition-all flex items-start gap-3 group"
                             >
-                                <div className="w-8 h-8 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-                                    ■
+                                <div className="w-8 h-8 rounded-md bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                                    <LayoutList size={16} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <h4 className="text-sm font-semibold text-text-primary truncate">{card.title}</h4>

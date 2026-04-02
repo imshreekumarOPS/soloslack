@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Badge from '../ui/Badge';
 import MarkdownRenderer from '../notes/MarkdownRenderer';
 import NotePicker from '../notes/NotePicker';
+import ConfirmModal from '../ui/ConfirmModal';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import { notesApi } from '@/lib/api/notesApi';
 import { cardsApi } from '@/lib/api/cardsApi';
@@ -41,6 +42,7 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
     const [editingCommentId, setEditingCommentId] = useState(null);
     const [editingCommentBody, setEditingCommentBody] = useState('');
     const [aiGenerating, setAiGenerating] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
     const newItemRef = useRef(null);
     const labelInputRef = useRef(null);
     const commentInputRef = useRef(null);
@@ -249,9 +251,7 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
     };
 
     const handleDelete = () => {
-        if (confirm('Delete this card? This cannot be undone.')) {
-            onDelete(card._id);
-        }
+        setConfirmDelete(true);
     };
 
     if (!card) return null;
@@ -708,6 +708,15 @@ export default function CardModal({ isOpen, onClose, card, onUpdate, onDelete })
                     </span>
                 </section>
             </div>
+
+            <ConfirmModal
+                isOpen={confirmDelete}
+                onClose={() => setConfirmDelete(false)}
+                onConfirm={() => onDelete(card._id)}
+                title="Delete Card"
+                message="Delete this card? This cannot be undone."
+                confirmText="Delete"
+            />
         </Modal>
     );
 }

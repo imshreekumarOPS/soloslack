@@ -5,6 +5,7 @@ import { Archive, FileText, LayoutDashboard, RotateCcw, Trash2, Clock } from 'lu
 import { archiveApi } from '@/lib/api/archiveApi';
 import { useNotes } from '@/context/NotesContext';
 import { useBoards } from '@/context/BoardsContext';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import { cn } from '@/lib/utils/cn';
 
 function timeAgoShort(dateStr) {
@@ -24,6 +25,7 @@ export default function ArchivePage() {
     const [archivedBoards, setArchivedBoards] = useState([]);
     const [loading, setLoading] = useState(true);
     const [actionPending, setActionPending] = useState(null); // id of item being acted on
+    const [confirmAction, setConfirmAction] = useState(null); // { title, message, onConfirm }
 
     const { fetchNotes } = useNotes();
     const { fetchBoards } = useBoards();
@@ -55,15 +57,20 @@ export default function ArchivePage() {
         }
     };
 
-    const handlePermanentDeleteNote = async (id) => {
-        if (!confirm('Permanently delete this note? This cannot be undone.')) return;
-        setActionPending(id);
-        try {
-            await archiveApi.permanentDeleteNote(id);
-            setArchivedNotes(prev => prev.filter(n => n._id !== id));
-        } finally {
-            setActionPending(null);
-        }
+    const handlePermanentDeleteNote = (id) => {
+        setConfirmAction({
+            title: 'Delete Note',
+            message: 'Permanently delete this note? This cannot be undone.',
+            onConfirm: async () => {
+                setActionPending(id);
+                try {
+                    await archiveApi.permanentDeleteNote(id);
+                    setArchivedNotes(prev => prev.filter(n => n._id !== id));
+                } finally {
+                    setActionPending(null);
+                }
+            },
+        });
     };
 
     const handleRestoreBoard = async (id) => {
@@ -77,39 +84,54 @@ export default function ArchivePage() {
         }
     };
 
-    const handlePermanentDeleteBoard = async (id) => {
-        if (!confirm('Permanently delete this board and all its cards? This cannot be undone.')) return;
-        setActionPending(id);
-        try {
-            await archiveApi.permanentDeleteBoard(id);
-            setArchivedBoards(prev => prev.filter(b => b._id !== id));
-        } finally {
-            setActionPending(null);
-        }
+    const handlePermanentDeleteBoard = (id) => {
+        setConfirmAction({
+            title: 'Delete Board',
+            message: 'Permanently delete this board and all its cards? This cannot be undone.',
+            onConfirm: async () => {
+                setActionPending(id);
+                try {
+                    await archiveApi.permanentDeleteBoard(id);
+                    setArchivedBoards(prev => prev.filter(b => b._id !== id));
+                } finally {
+                    setActionPending(null);
+                }
+            },
+        });
     };
 
-    const handleDeleteAllNotes = async () => {
+    const handleDeleteAllNotes = () => {
         if (archivedNotes.length === 0) return;
-        if (!confirm(`Permanently delete all ${archivedNotes.length} archived notes? This cannot be undone.`)) return;
-        setActionPending('all');
-        try {
-            await Promise.all(archivedNotes.map(n => archiveApi.permanentDeleteNote(n._id)));
-            setArchivedNotes([]);
-        } finally {
-            setActionPending(null);
-        }
+        setConfirmAction({
+            title: 'Delete All Notes',
+            message: `Permanently delete all ${archivedNotes.length} archived notes? This cannot be undone.`,
+            onConfirm: async () => {
+                setActionPending('all');
+                try {
+                    await Promise.all(archivedNotes.map(n => archiveApi.permanentDeleteNote(n._id)));
+                    setArchivedNotes([]);
+                } finally {
+                    setActionPending(null);
+                }
+            },
+        });
     };
 
-    const handleDeleteAllBoards = async () => {
+    const handleDeleteAllBoards = () => {
         if (archivedBoards.length === 0) return;
-        if (!confirm(`Permanently delete all ${archivedBoards.length} archived boards and their cards? This cannot be undone.`)) return;
-        setActionPending('all');
-        try {
-            await Promise.all(archivedBoards.map(b => archiveApi.permanentDeleteBoard(b._id)));
-            setArchivedBoards([]);
-        } finally {
-            setActionPending(null);
-        }
+        setConfirmAction({
+            title: 'Delete All Boards',
+            message: `Permanently delete all ${archivedBoards.length} archived boards and their cards? This cannot be undone.`,
+            onConfirm: async () => {
+                setActionPending('all');
+                try {
+                    await Promise.all(archivedBoards.map(b => archiveApi.permanentDeleteBoard(b._id)));
+                    setArchivedBoards([]);
+                } finally {
+                    setActionPending(null);
+                }
+            },
+        });
     };
 
     const noteCount = archivedNotes.length;
@@ -172,6 +194,15 @@ export default function ArchivePage() {
                     onDelete={b => handlePermanentDeleteBoard(b._id)}
                 />
             )}
+
+            <ConfirmModal
+                isOpen={!!confirmAction}
+                onClose={() => setConfirmAction(null)}
+                onConfirm={() => confirmAction?.onConfirm()}
+                title={confirmAction?.title || 'Confirm'}
+                message={confirmAction?.message || ''}
+                confirmText="Delete"
+            />
         </div>
     );
 }

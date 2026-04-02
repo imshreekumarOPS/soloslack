@@ -1,4 +1,5 @@
 const Note = require('../models/Note');
+const File = require('../models/File');
 const Card = require('../models/Card');
 
 const populateLinkedCards = (noteId) =>
@@ -12,10 +13,14 @@ const populateLinkedCards = (noteId) =>
 exports.getNotes = async (req, res, next) => {
     try {
         const { search, tag, limit = 50, skip = 0, workspaceId } = req.query;
+        console.log(`[DEBUG] getNotes: search=${search}, tag=${tag}, workspaceId=${workspaceId}`);
         const query = { isArchived: false };
+        let fileQuery = {}; // Ensure fileQuery is defined even if no workspaceId
 
         if (workspaceId) {
-            query.workspaceId = workspaceId === 'none' ? null : workspaceId;
+            const wsVal = (workspaceId === 'none' || workspaceId === 'null') ? null : workspaceId;
+            query.workspaceId = wsVal;
+            fileQuery.workspaceId = wsVal;
         }
 
         if (search && search.trim()) {
@@ -23,22 +28,48 @@ exports.getNotes = async (req, res, next) => {
                 { title: { $regex: search.trim(), $options: 'i' } },
                 { body: { $regex: search.trim(), $options: 'i' } },
             ];
+            fileQuery.name = { $regex: search.trim(), $options: 'i' };
         }
 
         if (tag && tag.trim()) {
             query.tags = tag.trim().toLowerCase();
         }
 
-        const [notes, count] = await Promise.all([
+        const [notes, files, countNotes, countFiles] = await Promise.all([
             Note.find(query)
                 .sort({ isPinned: -1, updatedAt: -1 })
-                .limit(Number(limit))
-                .skip(Number(skip))
+                .limit(Number(skip) + Number(limit))
+                .lean(),
+            File.find(fileQuery)
+                .sort({ updatedAt: -1 })
+                .limit(Number(skip) + Number(limit))
                 .lean(),
             Note.countDocuments(query),
+            File.countDocuments(fileQuery),
         ]);
+        console.log(`[DEBUG] Results: notesCount=${notes.length}, filesCount=${files.length}`);
 
-        res.status(200).json({ success: true, count, data: notes });
+        // Map files to look like notes
+        const fileNotes = files.map(file => ({
+            ...file,
+            title: file.name,
+            body: `File: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+            type: 'file',
+            isPinned: false,
+            tags: ['file', (file.mimeType || '').split('/')[1] || 'generic'],
+            updatedAt: file.updatedAt,
+            createdAt: file.createdAt
+        }));
+
+        // Merge and sort
+        const combined = [...notes.map(n => ({ ...n, type: 'note' })), ...fileNotes]
+            .sort((a, b) => {
+                if (a.isPinned !== b.isPinned) return b.isPinned ? 1 : -1;
+                return new Date(b.updatedAt) - new Date(a.updatedAt);
+            })
+            .slice(Number(skip), Number(skip) + Number(limit));
+
+        res.status(200).json({ success: true, count: countNotes + countFiles, data: combined });
     } catch (error) {
         next(error);
     }
